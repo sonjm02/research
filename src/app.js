@@ -7,6 +7,7 @@ const ThinFilmApp = (() => {
     editingId: null,
     searchText: "",
     filmFilter: "all",
+    sortMode: "sample-desc",
     statusTimer: null,
   };
 
@@ -161,9 +162,13 @@ const ThinFilmApp = (() => {
           <div id="trustSummary" class="trust-summary"></div>
 
           <div class="toolbar">
-            <input type="search" id="searchInput" placeholder="Sample ID, 박막, 기판, 메모 검색">
-            <select id="filmFilter">
+            <input type="search" id="searchInput" placeholder="예: 001, SRO, STO, roughness, recipe-test">
+            <select id="filmFilter" aria-label="박막 필터">
               <option value="all">전체 박막</option>
+            </select>
+            <select id="sortMode" aria-label="정렬 방식">
+              <option value="sample-desc">Sample ID 큰 번호 먼저</option>
+              <option value="sample-asc">Sample ID 작은 번호 먼저</option>
             </select>
           </div>
 
@@ -238,6 +243,11 @@ const ThinFilmApp = (() => {
 
     $("#filmFilter").addEventListener("change", (event) => {
       state.filmFilter = event.target.value;
+      renderRecords();
+    });
+
+    $("#sortMode").addEventListener("change", (event) => {
+      state.sortMode = event.target.value;
       renderRecords();
     });
 
@@ -492,8 +502,25 @@ const ThinFilmApp = (() => {
     state.filmFilter = select.value;
   }
 
+  function getSampleSortValue(record) {
+    return LabSchema.parseSequentialSampleId(record.sampleId);
+  }
+
+  function compareRecordsBySampleId(a, b) {
+    const aId = getSampleSortValue(a);
+    const bId = getSampleSortValue(b);
+
+    if (aId === null && bId === null) {
+      return Date.parse(b.updatedAt || b.createdAt || 0) - Date.parse(a.updatedAt || a.createdAt || 0);
+    }
+    if (aId === null) return 1;
+    if (bId === null) return -1;
+
+    return state.sortMode === "sample-asc" ? aId - bId : bId - aId;
+  }
+
   function getFilteredRecords() {
-    return state.records.filter((record) => {
+    const filtered = state.records.filter((record) => {
       const filmOk = state.filmFilter === "all" || String(record.filmName).toUpperCase() === state.filmFilter;
       const haystack = [
         record.sampleId,
@@ -512,6 +539,8 @@ const ThinFilmApp = (() => {
       const searchOk = !state.searchText || haystack.includes(state.searchText);
       return filmOk && searchOk;
     });
+
+    return filtered.sort(compareRecordsBySampleId);
   }
 
   function renderTrustSummary() {
