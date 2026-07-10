@@ -8,6 +8,41 @@ const LabSchema = (() => {
 
   const FILM_PRESETS = ["SRO", "LMO", "BMO", "STO", "Custom"];
 
+  const FIELD_PRESETS = {
+    substrate: [
+      { label: "STO(001)", value: "STO(001)" },
+      { label: "DSO(110)o", value: "DSO(110)o" },
+    ],
+    temperatureC: [
+      { label: "650°C", value: "650" },
+      { label: "700°C", value: "700" },
+      { label: "750°C", value: "750" },
+      { label: "800°C", value: "800" },
+    ],
+    oxygenPressure: [
+      { label: "100 mTorr", value: "100 mTorr" },
+    ],
+    lensPosition: [
+      { label: "140 mm", value: "140 mm" },
+    ],
+    laserEnergy: [
+      { label: "80 mJ", value: "80" },
+      { label: "90 mJ", value: "90" },
+      { label: "100 mJ", value: "100" },
+      { label: "110 mJ", value: "110" },
+      { label: "120 mJ", value: "120" },
+    ],
+    laserHz: [
+      { label: "5 Hz", value: "5" },
+      { label: "10 Hz", value: "10" },
+    ],
+    laserShots: [
+      { label: "1500 shots", value: "1500" },
+      { label: "3000 shots", value: "3000" },
+      { label: "6000 shots", value: "6000" },
+    ],
+  };
+
   const GROWTH_FIELDS = [
     {
       key: "sampleId",
@@ -27,7 +62,7 @@ const LabSchema = (() => {
       key: "substrate",
       label: "증착 기판",
       type: "text",
-      placeholder: "예: STO(001), DSO(110)O",
+      placeholder: "예: STO(001), DSO(110)o",
     },
     {
       key: "temperatureC",
@@ -48,7 +83,7 @@ const LabSchema = (() => {
       label: "렌즈 위치",
       type: "text",
       unit: "mm / stage unit",
-      placeholder: "예: 42.5 mm",
+      placeholder: "예: 140 mm",
     },
     {
       key: "laserEnergy",
@@ -62,7 +97,7 @@ const LabSchema = (() => {
       label: "레이저 반복률",
       type: "number",
       unit: "Hz",
-      placeholder: "예: 2",
+      placeholder: "예: 5",
     },
     {
       key: "laserShots",
@@ -153,6 +188,7 @@ const LabSchema = (() => {
   return {
     STORAGE_VERSION,
     FILM_PRESETS,
+    FIELD_PRESETS,
     GROWTH_FIELDS,
     ANALYSIS_FIELDS,
     makeSampleId,
