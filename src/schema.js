@@ -5,6 +5,7 @@
 
 const LabSchema = (() => {
   const STORAGE_VERSION = 1;
+  const SAMPLE_ID_PAD_WIDTH = 3;
 
   const NUMERIC_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots", "thicknessNm"];
   const NON_NEGATIVE_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots", "thicknessNm"];
@@ -53,7 +54,7 @@ const LabSchema = (() => {
       key: "sampleId",
       label: "Sample ID",
       type: "text",
-      placeholder: "예: SRO-STO-20260710-01",
+      placeholder: "예: 001",
       required: true,
     },
     {
@@ -150,28 +151,42 @@ const LabSchema = (() => {
   }
 
   function createId() {
-    if (crypto.randomUUID) return crypto.randomUUID();
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
     return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
   }
 
-  function makeSampleId(filmName = "TF") {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = pad2(now.getMonth() + 1);
-    const d = pad2(now.getDate());
-    const hh = pad2(now.getHours());
-    const mm = pad2(now.getMinutes());
-    const prefix = String(filmName || "TF").trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || "TF";
-    return `${prefix}-${y}${m}${d}-${hh}${mm}`;
+  function parseSequentialSampleId(value) {
+    const text = String(value ?? "").trim();
+    if (!/^\d+$/.test(text)) return null;
+
+    const number = Number(text);
+    if (!Number.isSafeInteger(number) || number < 0) return null;
+    return number;
   }
 
-  function makeDuplicateSampleId(sampleId = "sample") {
-    const base = String(sampleId || "sample").trim() || "sample";
-    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
-    return `${base}-copy-${getLocalDateTimeFileStamp()}-${suffix}`;
+  function formatSequentialSampleId(number) {
+    const safeNumber = Number.isSafeInteger(number) && number > 0 ? number : 1;
+    return String(safeNumber).padStart(SAMPLE_ID_PAD_WIDTH, "0");
   }
 
-  function createEmptyExperiment() {
+  function getNextSampleId(records = []) {
+    const maxId = records.reduce((max, record) => {
+      const parsed = parseSequentialSampleId(record?.sampleId);
+      return parsed === null ? max : Math.max(max, parsed);
+    }, 0);
+
+    return formatSequentialSampleId(maxId + 1);
+  }
+
+  function makeSampleId(records = []) {
+    return getNextSampleId(records);
+  }
+
+  function makeDuplicateSampleId(records = []) {
+    return getNextSampleId(records);
+  }
+
+  function createEmptyExperiment(overrides = {}) {
     const now = getIsoTimestamp();
     return {
       version: STORAGE_VERSION,
@@ -179,7 +194,7 @@ const LabSchema = (() => {
       createdAt: now,
       updatedAt: now,
       date: getLocalDateString(),
-      sampleId: makeSampleId(),
+      sampleId: "001",
       filmName: "",
       substrate: "",
       temperatureC: "",
@@ -195,6 +210,7 @@ const LabSchema = (() => {
       afmFiles: [],
       tags: "",
       notes: "",
+      ...overrides,
     };
   }
 
@@ -233,7 +249,11 @@ const LabSchema = (() => {
     const warnings = [];
 
     if (!isFilled(record.date)) errors.push("실험 날짜를 입력하세요.");
-    if (!isFilled(record.sampleId)) errors.push("Sample ID를 입력하세요.");
+    if (!isFilled(record.sampleId)) {
+      errors.push("Sample ID를 입력하세요.");
+    } else if (parseSequentialSampleId(record.sampleId) === null) {
+      errors.push("Sample ID는 001, 002, 003처럼 숫자만 입력하세요.");
+    }
     if (!isFilled(record.filmName)) errors.push("박막 이름을 입력하세요.");
 
     NUMERIC_FIELDS.forEach((key) => {
@@ -261,6 +281,7 @@ const LabSchema = (() => {
 
   return {
     STORAGE_VERSION,
+    SAMPLE_ID_PAD_WIDTH,
     FIELD_PRESETS,
     GROWTH_FIELDS,
     ANALYSIS_FIELDS,
@@ -269,6 +290,9 @@ const LabSchema = (() => {
     getLocalDateTimeFileStamp,
     getIsoTimestamp,
     createId,
+    parseSequentialSampleId,
+    formatSequentialSampleId,
+    getNextSampleId,
     makeSampleId,
     makeDuplicateSampleId,
     createEmptyExperiment,
