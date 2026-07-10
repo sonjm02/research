@@ -89,6 +89,7 @@ const ThinFilmApp = (() => {
 
             <div class="section-block">
               <h3>PLD growth 조건</h3>
+              <p class="section-help">자주 쓰는 조건은 입력칸 아래 프리셋 버튼을 누르면 바로 채워집니다.</p>
               <div class="field-grid">
                 ${LabSchema.GROWTH_FIELDS.filter((field) => field.key !== "sampleId").map(renderField).join("")}
               </div>
@@ -165,6 +166,8 @@ const ThinFilmApp = (() => {
     const unit = field.unit ? `<small>${escapeHtml(field.unit)}</small>` : "";
     const required = field.required ? "required" : "";
     const requiredMark = field.required ? " <b>*</b>" : "";
+    const presets = LabSchema.FIELD_PRESETS?.[field.key] || [];
+
     return `
       <label>
         <span>${escapeHtml(field.label)}${requiredMark}</span>
@@ -178,12 +181,34 @@ const ThinFilmApp = (() => {
           >
           ${unit}
         </div>
+        ${renderPresetButtons(field.key, presets)}
       </label>
+    `;
+  }
+
+  function renderPresetButtons(targetKey, presets) {
+    if (!presets.length) return "";
+    return `
+      <div class="preset-row condition-presets" aria-label="${escapeHtml(targetKey)} 프리셋">
+        ${presets
+          .map(
+            (preset) => `
+              <button
+                type="button"
+                class="chip preset-chip"
+                data-preset-target="${escapeHtml(targetKey)}"
+                data-preset-value="${escapeHtml(preset.value)}"
+              >${escapeHtml(preset.label)}</button>
+            `
+          )
+          .join("")}
+      </div>
     `;
   }
 
   function bindEvents() {
     $("#experimentForm").addEventListener("submit", handleSubmit);
+    $("#experimentForm").addEventListener("click", handlePresetClick);
     $("#resetBtn").addEventListener("click", resetForm);
     $("#newRecordBtn").addEventListener("click", resetForm);
     $("#clearAllBtn").addEventListener("click", handleClearAll);
@@ -220,6 +245,18 @@ const ThinFilmApp = (() => {
     });
 
     $("#recordList").addEventListener("click", handleRecordAction);
+  }
+
+  function handlePresetClick(event) {
+    const button = event.target.closest("[data-preset-target]");
+    if (!button) return;
+
+    const target = document.getElementById(button.dataset.presetTarget);
+    if (!target) return;
+
+    target.value = button.dataset.presetValue;
+    target.dispatchEvent(new Event("input", { bubbles: true }));
+    target.focus();
   }
 
   function collectFormData() {
