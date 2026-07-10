@@ -81,10 +81,6 @@ const ThinFilmApp = (() => {
                   </div>
                 </label>
               </div>
-
-              <div class="preset-row" aria-label="박막 이름 빠른 선택">
-                ${LabSchema.FILM_PRESETS.map((film) => `<button type="button" class="chip" data-film-preset="${film}">${film}</button>`).join("")}
-              </div>
             </div>
 
             <div class="section-block">
@@ -231,19 +227,6 @@ const ThinFilmApp = (() => {
       renderRecords();
     });
 
-    document.querySelectorAll("[data-film-preset]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const value = button.dataset.filmPreset;
-        if (value !== "Custom") {
-          $("#filmName").value = value;
-          if (!$("#sampleId").value || $("#sampleId").value.startsWith("TF-")) {
-            $("#sampleId").value = LabSchema.makeSampleId(value);
-          }
-        }
-        $("#filmName").focus();
-      });
-    });
-
     $("#recordList").addEventListener("click", handleRecordAction);
   }
 
@@ -256,6 +239,14 @@ const ThinFilmApp = (() => {
 
     target.value = button.dataset.presetValue;
     target.dispatchEvent(new Event("input", { bubbles: true }));
+
+    if (target.id === "filmName") {
+      const sampleId = $("#sampleId");
+      if (!sampleId.value || sampleId.value.startsWith("TF-")) {
+        sampleId.value = LabSchema.makeSampleId(target.value);
+      }
+    }
+
     target.focus();
   }
 
