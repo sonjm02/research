@@ -6,6 +6,9 @@
 const LabSchema = (() => {
   const STORAGE_VERSION = 1;
 
+  const NUMERIC_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots", "thicknessNm"];
+  const NON_NEGATIVE_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots", "thicknessNm"];
+
   const FIELD_PRESETS = {
     filmName: [
       { label: "SRO", value: "SRO" },
@@ -130,25 +133,52 @@ const LabSchema = (() => {
     },
   ];
 
+  function pad2(value) {
+    return String(value).padStart(2, "0");
+  }
+
+  function getLocalDateString(date = new Date()) {
+    return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
+  }
+
+  function getLocalDateTimeFileStamp(date = new Date()) {
+    return `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}-${pad2(date.getHours())}${pad2(date.getMinutes())}`;
+  }
+
+  function getIsoTimestamp(date = new Date()) {
+    return date.toISOString();
+  }
+
+  function createId() {
+    if (crypto.randomUUID) return crypto.randomUUID();
+    return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+
   function makeSampleId(filmName = "TF") {
     const now = new Date();
     const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, "0");
-    const d = String(now.getDate()).padStart(2, "0");
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mm = String(now.getMinutes()).padStart(2, "0");
+    const m = pad2(now.getMonth() + 1);
+    const d = pad2(now.getDate());
+    const hh = pad2(now.getHours());
+    const mm = pad2(now.getMinutes());
     const prefix = String(filmName || "TF").trim().toUpperCase().replace(/[^A-Z0-9]/g, "") || "TF";
     return `${prefix}-${y}${m}${d}-${hh}${mm}`;
   }
 
+  function makeDuplicateSampleId(sampleId = "sample") {
+    const base = String(sampleId || "sample").trim() || "sample";
+    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return `${base}-copy-${getLocalDateTimeFileStamp()}-${suffix}`;
+  }
+
   function createEmptyExperiment() {
-    const today = new Date().toISOString().slice(0, 10);
+    const now = getIsoTimestamp();
     return {
       version: STORAGE_VERSION,
-      id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      date: today,
+      id: createId(),
+      createdAt: now,
+      updatedAt: now,
+      date: getLocalDateString(),
       sampleId: makeSampleId(),
       filmName: "",
       substrate: "",
@@ -168,13 +198,20 @@ const LabSchema = (() => {
     };
   }
 
-  function normalizeExperiment(input) {
+  function normalizeExperiment(input = {}, options = {}) {
+    const { touchUpdatedAt = false } = options;
+    const now = getIsoTimestamp();
     const base = createEmptyExperiment();
     const merged = { ...base, ...input };
+
     merged.version = STORAGE_VERSION;
-    merged.updatedAt = new Date().toISOString();
+    merged.id = merged.id || createId();
+    merged.date = merged.date || getLocalDateString();
+    merged.createdAt = merged.createdAt || merged.updatedAt || now;
+    merged.updatedAt = touchUpdatedAt ? now : (merged.updatedAt || merged.createdAt || now);
     merged.xrdFiles = Array.isArray(merged.xrdFiles) ? merged.xrdFiles : [];
     merged.afmFiles = Array.isArray(merged.afmFiles) ? merged.afmFiles : [];
+
     return merged;
   }
 
@@ -183,8 +220,43 @@ const LabSchema = (() => {
       name: file.name,
       size: file.size,
       type: file.type || "unknown",
-      lastModified: file.lastModified ? new Date(file.lastModified).toISOString() : "",
+      lastModified: file.lastModified ? getIsoTimestamp(new Date(file.lastModified)) : "",
     }));
+  }
+
+  function isFilled(value) {
+    return value !== undefined && value !== null && String(value).trim() !== "";
+  }
+
+  function validateExperiment(record) {
+    const errors = [];
+    const warnings = [];
+
+    if (!isFilled(record.date)) errors.push("실험 날짜를 입력하세요.");
+    if (!isFilled(record.sampleId)) errors.push("Sample ID를 입력하세요.");
+    if (!isFilled(record.filmName)) errors.push("박막 이름을 입력하세요.");
+
+    NUMERIC_FIELDS.forEach((key) => {
+      const value = record[key];
+      if (!isFilled(value)) return;
+      const numericValue = Number(value);
+      const field = GROWTH_FIELDS.find((item) => item.key === key);
+      const label = field?.label || key;
+
+      if (!Number.isFinite(numericValue)) {
+        errors.push(`${label}은 숫자로 입력하세요.`);
+        return;
+      }
+
+      if (NON_NEGATIVE_FIELDS.includes(key) && numericValue < 0) {
+        errors.push(`${label}은 음수가 될 수 없습니다.`);
+      }
+    });
+
+    if (!isFilled(record.substrate)) warnings.push("증착 기판이 비어 있습니다.");
+    if (!isFilled(record.oxygenPressure)) warnings.push("산소 압력이 비어 있습니다.");
+
+    return { errors, warnings };
   }
 
   return {
@@ -192,9 +264,16 @@ const LabSchema = (() => {
     FIELD_PRESETS,
     GROWTH_FIELDS,
     ANALYSIS_FIELDS,
+    NUMERIC_FIELDS,
+    getLocalDateString,
+    getLocalDateTimeFileStamp,
+    getIsoTimestamp,
+    createId,
     makeSampleId,
+    makeDuplicateSampleId,
     createEmptyExperiment,
     normalizeExperiment,
     fileInputToMetadataList,
+    validateExperiment,
   };
 })();
