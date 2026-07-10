@@ -135,6 +135,7 @@ h1 {
 
 .subtitle,
 .panel-title-row p,
+.section-help,
 .muted,
 small {
   color: var(--muted);
@@ -142,6 +143,11 @@ small {
 
 .subtitle {
   margin-bottom: 0;
+}
+
+.section-help {
+  margin: -0.35rem 0 0.85rem;
+  font-size: 0.92rem;
 }
 
 .header-actions,
@@ -224,6 +230,7 @@ small {
 label {
   display: grid;
   gap: 0.35rem;
+  align-content: start;
   font-weight: 650;
 }
 
@@ -268,6 +275,23 @@ textarea {
   background: var(--soft);
   color: #3730a3;
   padding: 0.45rem 0.75rem;
+}
+
+.condition-presets {
+  gap: 0.35rem;
+  margin-top: 0.12rem;
+}
+
+.preset-chip {
+  min-height: 28px;
+  padding: 0.34rem 0.55rem;
+  border: 1px solid #dbe4ff;
+  font-size: 0.8rem;
+  line-height: 1.1;
+}
+
+.preset-chip:hover {
+  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.12);
 }
 
 .toolbar {
