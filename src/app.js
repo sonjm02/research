@@ -3,9 +3,11 @@
 const ThinFilmApp = (() => {
   const state = {
     records: [],
+    backupMeta: {},
     editingId: null,
     searchText: "",
     filmFilter: "all",
+    statusTimer: null,
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -20,7 +22,7 @@ const ThinFilmApp = (() => {
   }
 
   function formatDateTime(isoString) {
-    if (!isoString) return "";
+    if (!isoString) return "기록 없음";
     const date = new Date(isoString);
     if (Number.isNaN(date.getTime())) return isoString;
     return date.toLocaleString("ko-KR", {
@@ -32,8 +34,12 @@ const ThinFilmApp = (() => {
     });
   }
 
-  function getToday() {
-    return new Date().toISOString().slice(0, 10);
+  function getLatestUpdatedAt(records) {
+    const timestamps = records
+      .map((record) => Date.parse(record.updatedAt))
+      .filter((time) => Number.isFinite(time));
+    if (!timestamps.length) return "";
+    return new Date(Math.max(...timestamps)).toISOString();
   }
 
   function renderLayout() {
@@ -62,6 +68,8 @@ const ThinFilmApp = (() => {
             <button type="button" class="ghost" id="newRecordBtn">새 기록</button>
           </div>
 
+          <div id="statusMessage" class="status-message" aria-live="polite" hidden></div>
+
           <form id="experimentForm">
             <input type="hidden" name="id" id="recordId">
             <input type="hidden" name="createdAt" id="createdAt">
@@ -70,7 +78,7 @@ const ThinFilmApp = (() => {
               <h3>기본 정보</h3>
               <div class="field-grid two-cols">
                 <label>
-                  <span>실험 날짜</span>
+                  <span>실험 날짜 <b>*</b></span>
                   <input type="date" name="date" id="date" required>
                 </label>
                 <label>
@@ -145,6 +153,8 @@ const ThinFilmApp = (() => {
             </div>
           </div>
 
+          <div id="trustSummary" class="trust-summary"></div>
+
           <div class="toolbar">
             <input type="search" id="searchInput" placeholder="Sample ID, 박막, 기판, 메모 검색">
             <select id="filmFilter">
@@ -213,8 +223,8 @@ const ThinFilmApp = (() => {
       $("#sampleId").value = LabSchema.makeSampleId(filmName);
     });
 
-    $("#exportJsonBtn").addEventListener("click", () => LabStorage.exportJson(state.records));
-    $("#exportCsvBtn").addEventListener("click", () => LabStorage.exportCsv(state.records));
+    $("#exportJsonBtn").addEventListener("click", handleExportJson);
+    $("#exportCsvBtn").addEventListener("click", handleExportCsv);
     $("#importJsonInput").addEventListener("change", handleImportJson);
 
     $("#searchInput").addEventListener("input", (event) => {
@@ -228,6 +238,20 @@ const ThinFilmApp = (() => {
     });
 
     $("#recordList").addEventListener("click", handleRecordAction);
+  }
+
+  function showStatus(message, type = "success") {
+    const element = $("#statusMessage");
+    if (!element) return;
+
+    element.textContent = message;
+    element.className = `status-message ${type}`;
+    element.hidden = false;
+
+    if (state.statusTimer) clearTimeout(state.statusTimer);
+    state.statusTimer = setTimeout(() => {
+      element.hidden = true;
+    }, 6000);
   }
 
   function handlePresetClick(event) {
@@ -258,11 +282,11 @@ const ThinFilmApp = (() => {
     const xrdFileInput = $("#xrdFiles");
     const afmFileInput = $("#afmFiles");
 
-    return LabSchema.normalizeExperiment({
+    return {
       ...base,
       id: formData.get("id") || base.id,
       createdAt: formData.get("createdAt") || base.createdAt,
-      date: formData.get("date") || getToday(),
+      date: formData.get("date") || LabSchema.getLocalDateString(),
       sampleId: formData.get("sampleId"),
       filmName: formData.get("filmName"),
       substrate: formData.get("substrate"),
@@ -279,23 +303,28 @@ const ThinFilmApp = (() => {
       afmFiles: afmFileInput.files.length ? LabSchema.fileInputToMetadataList(afmFileInput.files) : (previous?.afmFiles || []),
       tags: formData.get("tags"),
       notes: formData.get("notes"),
-    });
+    };
   }
 
   function handleSubmit(event) {
     event.preventDefault();
     const record = collectFormData();
+    const validation = LabSchema.validateExperiment(record);
 
-    if (!record.sampleId.trim() || !record.filmName.trim()) {
-      alert("Sample ID와 박막 이름은 필수입니다.");
+    if (validation.errors.length) {
+      showStatus(validation.errors.join(" "), "error");
       return;
     }
 
-    LabStorage.upsertRecord(record);
+    const wasEditing = Boolean(state.editingId);
+    LabStorage.upsertRecord(record, { touchUpdatedAt: true });
     state.records = LabStorage.loadRecords();
     state.editingId = null;
     resetForm({ keepRenderedRecords: true });
     renderRecords();
+
+    const warningText = validation.warnings.length ? ` 참고: ${validation.warnings.join(" ")}` : "";
+    showStatus(`${wasEditing ? "수정" : "저장"} 완료. JSON 백업을 권장합니다.${warningText}`, validation.warnings.length ? "warning" : "success");
   }
 
   function resetForm(options = {}) {
@@ -315,7 +344,7 @@ const ThinFilmApp = (() => {
   function populateForm(record) {
     state.editingId = record.id;
     $("#recordId").value = record.id;
-    $("#createdAt").value = record.createdAt || new Date().toISOString();
+    $("#createdAt").value = record.createdAt || LabSchema.getIsoTimestamp();
     [
       "date",
       "sampleId",
@@ -357,15 +386,23 @@ const ThinFilmApp = (() => {
     }
 
     if (button.dataset.action === "duplicate") {
+      const now = LabSchema.getIsoTimestamp();
       const duplicated = LabSchema.normalizeExperiment({
         ...record,
-        id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-        sampleId: `${record.sampleId}-copy`,
-        createdAt: new Date().toISOString(),
-      });
-      LabStorage.upsertRecord(duplicated);
+        id: LabSchema.createId(),
+        sampleId: LabSchema.makeDuplicateSampleId(record.sampleId),
+        createdAt: now,
+        updatedAt: now,
+        tags: [record.tags, "duplicated"].filter(Boolean).join(", "),
+        notes: [record.notes, `복제 기록: 원본 Sample ID ${record.sampleId}, 복제 시각 ${formatDateTime(now)}`]
+          .filter(Boolean)
+          .join("\n"),
+      }, { touchUpdatedAt: false });
+
+      LabStorage.upsertRecord(duplicated, { touchUpdatedAt: false });
       state.records = LabStorage.loadRecords();
       renderRecords();
+      showStatus(`복제 완료: ${duplicated.sampleId}. JSON 백업을 권장합니다.`, "success");
     }
 
     if (button.dataset.action === "delete") {
@@ -375,28 +412,65 @@ const ThinFilmApp = (() => {
       state.records = LabStorage.loadRecords();
       renderRecords();
       if (state.editingId === id) resetForm({ keepRenderedRecords: true });
+      showStatus(`삭제 완료: ${record.sampleId}. JSON 백업을 권장합니다.`, "warning");
     }
   }
 
   function handleClearAll() {
-    if (!state.records.length) return;
-    const ok = confirm("저장된 모든 실험 기록을 삭제할까요? 이 작업은 되돌릴 수 없습니다.");
-    if (!ok) return;
+    if (!state.records.length) {
+      showStatus("삭제할 기록이 없습니다.", "info");
+      return;
+    }
+
+    const input = prompt("전체 삭제 전 JSON 백업을 권장합니다. 모든 기록을 삭제하려면 DELETE 또는 전체삭제를 직접 입력하세요.");
+    if (input !== "DELETE" && input !== "전체삭제") {
+      showStatus("전체 삭제가 취소되었습니다.", "info");
+      return;
+    }
+
     LabStorage.clearRecords();
     state.records = [];
     resetForm({ keepRenderedRecords: true });
     renderRecords();
+    showStatus("전체 삭제 완료. 백업 파일이 없다면 복구할 수 없습니다.", "warning");
+  }
+
+  function handleExportJson() {
+    try {
+      const result = LabStorage.exportJson(state.records);
+      state.backupMeta = result.backupMeta;
+      renderTrustSummary();
+      showStatus(`JSON 내보내기 완료: ${result.filename}`, "success");
+    } catch (error) {
+      console.error(error);
+      showStatus("JSON 내보내기 중 오류가 발생했습니다.", "error");
+    }
+  }
+
+  function handleExportCsv() {
+    try {
+      const result = LabStorage.exportCsv(state.records);
+      state.backupMeta = result.backupMeta;
+      renderTrustSummary();
+      showStatus(`CSV 내보내기 완료: ${result.filename}`, "success");
+    } catch (error) {
+      console.error(error);
+      showStatus("CSV 내보내기 중 오류가 발생했습니다.", "error");
+    }
   }
 
   async function handleImportJson(event) {
     const file = event.target.files[0];
     if (!file) return;
     try {
-      state.records = await LabStorage.importJsonFile(file);
+      const result = await LabStorage.importJsonFile(file);
+      state.records = result.records;
       renderRecords();
-      alert("JSON 기록을 가져왔습니다.");
+      const { added, updated, skipped, invalid } = result.summary;
+      showStatus(`JSON 가져오기 완료: 추가 ${added}개, 업데이트 ${updated}개, 건너뜀 ${skipped}개, 무효 ${invalid}개`, invalid ? "warning" : "success");
     } catch (error) {
-      alert(`가져오기 실패: ${error.message}`);
+      alert(`가져오기 실패: ${error.message}\n기존 기록은 유지되었습니다.`);
+      showStatus("JSON 가져오기 실패. 기존 기록은 유지되었습니다.", "error");
     } finally {
       event.target.value = "";
     }
@@ -438,8 +512,34 @@ const ThinFilmApp = (() => {
     });
   }
 
+  function renderTrustSummary() {
+    const summary = $("#trustSummary");
+    if (!summary) return;
+
+    const latestUpdatedAt = getLatestUpdatedAt(state.records);
+    summary.innerHTML = `
+      <div class="trust-item">
+        <span>저장된 기록</span>
+        <strong>${state.records.length}개</strong>
+      </div>
+      <div class="trust-item">
+        <span>마지막 기록 수정</span>
+        <strong>${escapeHtml(formatDateTime(latestUpdatedAt))}</strong>
+      </div>
+      <div class="trust-item">
+        <span>마지막 JSON 백업</span>
+        <strong>${escapeHtml(formatDateTime(state.backupMeta.lastJsonExportedAt))}</strong>
+      </div>
+      <div class="trust-item">
+        <span>마지막 CSV 백업</span>
+        <strong>${escapeHtml(formatDateTime(state.backupMeta.lastCsvExportedAt))}</strong>
+      </div>
+    `;
+  }
+
   function renderRecords() {
     updateFilmFilterOptions();
+    renderTrustSummary();
     const filtered = getFilteredRecords();
     $("#statsText").textContent = `저장된 기록 ${state.records.length}개 · 현재 표시 ${filtered.length}개`;
 
@@ -532,6 +632,7 @@ const ThinFilmApp = (() => {
     renderLayout();
     bindEvents();
     state.records = LabStorage.loadRecords();
+    state.backupMeta = LabStorage.getBackupMeta();
     resetForm({ keepRenderedRecords: true });
     renderRecords();
   }
