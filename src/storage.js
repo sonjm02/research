@@ -5,6 +5,7 @@
 
 const LabStorage = (() => {
   const STORAGE_KEY = "thin-film-research-notebook-v1";
+  const BACKUP_META_KEY = "thin-film-research-backup-meta-v1";
 
   function loadRecords() {
     try {
@@ -12,7 +13,7 @@ const LabStorage = (() => {
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      return parsed.map(LabSchema.normalizeExperiment);
+      return parsed.map((record) => LabSchema.normalizeExperiment(record, { touchUpdatedAt: false }));
     } catch (error) {
       console.error("Failed to load records", error);
       return [];
@@ -20,14 +21,15 @@ const LabStorage = (() => {
   }
 
   function saveRecords(records) {
-    const normalized = records.map(LabSchema.normalizeExperiment);
+    const normalized = records.map((record) => LabSchema.normalizeExperiment(record, { touchUpdatedAt: false }));
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized, null, 2));
     return normalized;
   }
 
-  function upsertRecord(record) {
+  function upsertRecord(record, options = {}) {
+    const { touchUpdatedAt = true } = options;
     const records = loadRecords();
-    const normalized = LabSchema.normalizeExperiment(record);
+    const normalized = LabSchema.normalizeExperiment(record, { touchUpdatedAt });
     const index = records.findIndex((item) => item.id === normalized.id);
 
     if (index >= 0) {
@@ -50,6 +52,24 @@ const LabStorage = (() => {
     localStorage.removeItem(STORAGE_KEY);
   }
 
+  function getBackupMeta() {
+    try {
+      const raw = localStorage.getItem(BACKUP_META_KEY);
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+      console.error("Failed to load backup metadata", error);
+      return {};
+    }
+  }
+
+  function saveBackupMeta(meta) {
+    const next = { ...getBackupMeta(), ...meta };
+    localStorage.setItem(BACKUP_META_KEY, JSON.stringify(next, null, 2));
+    return next;
+  }
+
   function downloadText(filename, text, mimeType = "text/plain") {
     const blob = new Blob([text], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -63,14 +83,25 @@ const LabStorage = (() => {
   }
 
   function exportJson(records) {
-    const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+    const exportedAt = LabSchema.getIsoTimestamp();
+    const stamp = LabSchema.getLocalDateTimeFileStamp();
+    const filename = `thin-film-records-${stamp}.json`;
     const payload = {
-      exportedAt: new Date().toISOString(),
+      exportedAt,
       app: "thin-film-research-notebook",
       version: LabSchema.STORAGE_VERSION,
-      records,
+      records: records.map((record) => LabSchema.normalizeExperiment(record, { touchUpdatedAt: false })),
     };
-    downloadText(`thin-film-records-${date}.json`, JSON.stringify(payload, null, 2), "application/json");
+
+    downloadText(filename, JSON.stringify(payload, null, 2), "application/json");
+    const backupMeta = saveBackupMeta({
+      lastExportedAt: exportedAt,
+      lastExportType: "JSON",
+      lastJsonExportedAt: exportedAt,
+      lastJsonFilename: filename,
+    });
+
+    return { filename, exportedAt, backupMeta };
   }
 
   function escapeCsv(value) {
@@ -103,20 +134,94 @@ const LabStorage = (() => {
 
     const lines = [headers.join(",")];
     records.forEach((record) => {
+      const normalized = LabSchema.normalizeExperiment(record, { touchUpdatedAt: false });
       lines.push(
         headers
           .map((header) => {
             if (header === "xrdFiles" || header === "afmFiles") {
-              return escapeCsv((record[header] || []).map((file) => file.name).join("; "));
+              return escapeCsv((normalized[header] || []).map((file) => file.name).join("; "));
             }
-            return escapeCsv(record[header]);
+            return escapeCsv(normalized[header]);
           })
           .join(",")
       );
     });
 
-    const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-    downloadText(`thin-film-records-${date}.csv`, lines.join("\n"), "text/csv;charset=utf-8");
+    const exportedAt = LabSchema.getIsoTimestamp();
+    const stamp = LabSchema.getLocalDateTimeFileStamp();
+    const filename = `thin-film-records-${stamp}.csv`;
+    downloadText(filename, lines.join("\n"), "text/csv;charset=utf-8");
+
+    const backupMeta = saveBackupMeta({
+      lastExportedAt: exportedAt,
+      lastExportType: "CSV",
+      lastCsvExportedAt: exportedAt,
+      lastCsvFilename: filename,
+    });
+
+    return { filename, exportedAt, backupMeta };
+  }
+
+  function parseTimestamp(value) {
+    if (!value) return 0;
+    const time = Date.parse(value);
+    return Number.isFinite(time) ? time : 0;
+  }
+
+  function validateImportPayload(parsed) {
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      throw new Error("JSON 최상위 구조는 records 배열을 포함한 객체여야 합니다.");
+    }
+
+    if (!Array.isArray(parsed.records)) {
+      throw new Error("JSON 안에 records 배열이 없습니다.");
+    }
+
+    return parsed.records;
+  }
+
+  function mergeImportedRecords(existingRecords, incomingRecords) {
+    const byId = new Map(existingRecords.map((record) => [record.id, record]));
+    const summary = {
+      added: 0,
+      updated: 0,
+      skipped: 0,
+      invalid: 0,
+    };
+
+    incomingRecords.forEach((rawRecord) => {
+      if (!rawRecord || typeof rawRecord !== "object" || Array.isArray(rawRecord)) {
+        summary.invalid += 1;
+        return;
+      }
+
+      const incoming = LabSchema.normalizeExperiment(rawRecord, { touchUpdatedAt: false });
+      if (!incoming.id) {
+        summary.invalid += 1;
+        return;
+      }
+
+      const existing = byId.get(incoming.id);
+      if (!existing) {
+        byId.set(incoming.id, incoming);
+        summary.added += 1;
+        return;
+      }
+
+      const incomingTime = parseTimestamp(incoming.updatedAt);
+      const existingTime = parseTimestamp(existing.updatedAt);
+      if (incomingTime > existingTime) {
+        byId.set(incoming.id, incoming);
+        summary.updated += 1;
+      } else {
+        summary.skipped += 1;
+      }
+    });
+
+    return {
+      records: Array.from(byId.values()).sort((a, b) => parseTimestamp(b.updatedAt) - parseTimestamp(a.updatedAt)),
+      summary,
+    };
   }
 
   function importJsonFile(file) {
@@ -125,31 +230,30 @@ const LabStorage = (() => {
       reader.onload = () => {
         try {
           const parsed = JSON.parse(reader.result);
-          const incoming = Array.isArray(parsed) ? parsed : parsed.records;
-          if (!Array.isArray(incoming)) {
-            throw new Error("JSON 안에 records 배열이 없습니다.");
-          }
-          const existing = loadRecords();
-          const byId = new Map(existing.map((record) => [record.id, record]));
-          incoming.map(LabSchema.normalizeExperiment).forEach((record) => byId.set(record.id, record));
-          const merged = saveRecords(Array.from(byId.values()));
-          resolve(merged);
+          const incomingRecords = validateImportPayload(parsed);
+          const existingRecords = loadRecords();
+          const result = mergeImportedRecords(existingRecords, incomingRecords);
+          const saved = saveRecords(result.records);
+          resolve({ records: saved, summary: result.summary });
         } catch (error) {
           reject(error);
         }
       };
-      reader.onerror = reject;
+      reader.onerror = () => reject(new Error("파일을 읽는 중 오류가 발생했습니다."));
       reader.readAsText(file);
     });
   }
 
   return {
     STORAGE_KEY,
+    BACKUP_META_KEY,
     loadRecords,
     saveRecords,
     upsertRecord,
     deleteRecord,
     clearRecords,
+    getBackupMeta,
+    saveBackupMeta,
     exportJson,
     exportCsv,
     importJsonFile,
