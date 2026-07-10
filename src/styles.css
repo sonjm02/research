@@ -8,6 +8,8 @@
   --accent: #2563eb;
   --accent-dark: #1d4ed8;
   --danger: #dc2626;
+  --warning: #d97706;
+  --success: #15803d;
   --soft: #eef2ff;
   --radius: 18px;
   --shadow: 0 12px 32px rgba(15, 23, 42, 0.08);
@@ -195,6 +197,67 @@ small {
 
 .panel-title-row h2 {
   margin-bottom: 0.25rem;
+}
+
+.status-message {
+  border-radius: 14px;
+  margin-bottom: 1rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--line);
+  background: #f8fafc;
+  color: var(--ink);
+  font-weight: 650;
+}
+
+.status-message.success {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+  color: var(--success);
+}
+
+.status-message.warning {
+  border-color: #fed7aa;
+  background: #fffbeb;
+  color: var(--warning);
+}
+
+.status-message.error {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: var(--danger);
+}
+
+.status-message.info {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.trust-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin-bottom: 1rem;
+}
+
+.trust-item {
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: #f9fafb;
+  padding: 0.7rem;
+}
+
+.trust-item span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.trust-item strong {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.92rem;
+  word-break: keep-all;
 }
 
 .section-block {
@@ -435,7 +498,8 @@ summary {
   .field-grid,
   .analysis-grid,
   .two-cols,
-  .details-grid {
+  .details-grid,
+  .trust-summary {
     grid-template-columns: 1fr;
   }
 
