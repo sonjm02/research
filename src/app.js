@@ -162,7 +162,7 @@ const ThinFilmApp = (() => {
           <div id="trustSummary" class="trust-summary"></div>
 
           <div class="toolbar">
-            <input type="search" id="searchInput" placeholder="예: 001, SRO, STO, roughness, recipe-test">
+            <input type="search" id="searchInput" placeholder="예: 001, SRO, L chamber, STO, roughness">
             <select id="filmFilter" aria-label="박막 필터">
               <option value="all">전체 박막</option>
             </select>
@@ -295,6 +295,7 @@ const ThinFilmApp = (() => {
       date: formData.get("date") || LabSchema.getLocalDateString(),
       sampleId: formData.get("sampleId"),
       filmName: formData.get("filmName"),
+      growthChamber: formData.get("growthChamber"),
       substrate: formData.get("substrate"),
       temperatureC: formData.get("temperatureC"),
       oxygenPressure: formData.get("oxygenPressure"),
@@ -360,6 +361,7 @@ const ThinFilmApp = (() => {
       "date",
       "sampleId",
       "filmName",
+      "growthChamber",
       "substrate",
       "temperatureC",
       "oxygenPressure",
@@ -525,6 +527,7 @@ const ThinFilmApp = (() => {
       const haystack = [
         record.sampleId,
         record.filmName,
+        record.growthChamber,
         record.substrate,
         record.temperatureC,
         record.oxygenPressure,
@@ -609,7 +612,7 @@ const ThinFilmApp = (() => {
           <div>
             <p class="record-date">${escapeHtml(record.date)}</p>
             <h3>${escapeHtml(record.sampleId)}</h3>
-            <p class="record-subtitle">${escapeHtml(record.filmName || "-")} on ${escapeHtml(record.substrate || "-")}</p>
+            <p class="record-subtitle">${escapeHtml(record.filmName || "-")} · ${escapeHtml(record.growthChamber || "chamber 미기록")} · ${escapeHtml(record.substrate || "기판 미기록")}</p>
           </div>
           <div class="record-actions">
             <button type="button" class="tiny" data-action="edit" data-id="${record.id}">수정</button>
@@ -619,6 +622,7 @@ const ThinFilmApp = (() => {
         </div>
 
         <div class="condition-grid">
+          ${renderCondition("Chamber", record.growthChamber, "")}
           ${renderCondition("온도", record.temperatureC, "°C")}
           ${renderCondition("산소 압력", record.oxygenPressure, "")}
           ${renderCondition("렌즈", record.lensPosition, "")}
