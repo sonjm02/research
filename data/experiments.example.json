@@ -11,6 +11,7 @@
       "date": "2026-07-10",
       "sampleId": "001",
       "filmName": "SRO",
+      "growthChamber": "L chamber",
       "substrate": "STO(001)",
       "temperatureC": "700",
       "oxygenPressure": "100 mTorr",
