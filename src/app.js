@@ -42,6 +42,10 @@ const ThinFilmApp = (() => {
     return new Date(Math.max(...timestamps)).toISOString();
   }
 
+  function getNextSampleId() {
+    return LabSchema.getNextSampleId(state.records);
+  }
+
   function renderLayout() {
     $("#app").innerHTML = `
       <header class="app-header">
@@ -84,9 +88,10 @@ const ThinFilmApp = (() => {
                 <label>
                   <span>Sample ID <b>*</b></span>
                   <div class="inline-control">
-                    <input type="text" name="sampleId" id="sampleId" placeholder="예: SRO-STO-20260710-01" required>
+                    <input type="text" name="sampleId" id="sampleId" placeholder="예: 001" required>
                     <button type="button" class="tiny" id="generateIdBtn">자동</button>
                   </div>
+                  <small>숫자형 Sample ID 중 가장 큰 값보다 1 큰 번호를 자동으로 사용합니다.</small>
                 </label>
               </div>
             </div>
@@ -219,8 +224,7 @@ const ThinFilmApp = (() => {
     $("#newRecordBtn").addEventListener("click", resetForm);
     $("#clearAllBtn").addEventListener("click", handleClearAll);
     $("#generateIdBtn").addEventListener("click", () => {
-      const filmName = $("#filmName").value || "TF";
-      $("#sampleId").value = LabSchema.makeSampleId(filmName);
+      $("#sampleId").value = getNextSampleId();
     });
 
     $("#exportJsonBtn").addEventListener("click", handleExportJson);
@@ -263,21 +267,13 @@ const ThinFilmApp = (() => {
 
     target.value = button.dataset.presetValue;
     target.dispatchEvent(new Event("input", { bubbles: true }));
-
-    if (target.id === "filmName") {
-      const sampleId = $("#sampleId");
-      if (!sampleId.value || sampleId.value.startsWith("TF-")) {
-        sampleId.value = LabSchema.makeSampleId(target.value);
-      }
-    }
-
     target.focus();
   }
 
   function collectFormData() {
     const previous = state.editingId ? state.records.find((record) => record.id === state.editingId) : null;
     const formData = new FormData($("#experimentForm"));
-    const base = previous || LabSchema.createEmptyExperiment();
+    const base = previous || LabSchema.createEmptyExperiment({ sampleId: getNextSampleId() });
 
     const xrdFileInput = $("#xrdFiles");
     const afmFileInput = $("#afmFiles");
@@ -310,6 +306,11 @@ const ThinFilmApp = (() => {
     event.preventDefault();
     const record = collectFormData();
     const validation = LabSchema.validateExperiment(record);
+    const duplicate = state.records.find((item) => item.id !== record.id && item.sampleId === record.sampleId);
+
+    if (duplicate) {
+      validation.errors.push(`Sample ID ${record.sampleId}는 이미 사용 중입니다. 자동 버튼을 눌러 다음 번호를 사용하세요.`);
+    }
 
     if (validation.errors.length) {
       showStatus(validation.errors.join(" "), "error");
@@ -324,11 +325,11 @@ const ThinFilmApp = (() => {
     renderRecords();
 
     const warningText = validation.warnings.length ? ` 참고: ${validation.warnings.join(" ")}` : "";
-    showStatus(`${wasEditing ? "수정" : "저장"} 완료. JSON 백업을 권장합니다.${warningText}`, validation.warnings.length ? "warning" : "success");
+    showStatus(`${wasEditing ? "수정" : "저장"} 완료. 다음 Sample ID는 ${getNextSampleId()}입니다. JSON 백업을 권장합니다.${warningText}`, validation.warnings.length ? "warning" : "success");
   }
 
   function resetForm(options = {}) {
-    const empty = LabSchema.createEmptyExperiment();
+    const empty = LabSchema.createEmptyExperiment({ sampleId: getNextSampleId() });
     state.editingId = null;
     $("#experimentForm").reset();
     $("#recordId").value = empty.id;
@@ -390,7 +391,7 @@ const ThinFilmApp = (() => {
       const duplicated = LabSchema.normalizeExperiment({
         ...record,
         id: LabSchema.createId(),
-        sampleId: LabSchema.makeDuplicateSampleId(record.sampleId),
+        sampleId: LabSchema.makeDuplicateSampleId(state.records),
         createdAt: now,
         updatedAt: now,
         tags: [record.tags, "duplicated"].filter(Boolean).join(", "),
@@ -412,7 +413,7 @@ const ThinFilmApp = (() => {
       state.records = LabStorage.loadRecords();
       renderRecords();
       if (state.editingId === id) resetForm({ keepRenderedRecords: true });
-      showStatus(`삭제 완료: ${record.sampleId}. JSON 백업을 권장합니다.`, "warning");
+      showStatus(`삭제 완료: ${record.sampleId}. 다음 Sample ID는 ${getNextSampleId()}입니다. JSON 백업을 권장합니다.`, "warning");
     }
   }
 
@@ -432,7 +433,7 @@ const ThinFilmApp = (() => {
     state.records = [];
     resetForm({ keepRenderedRecords: true });
     renderRecords();
-    showStatus("전체 삭제 완료. 백업 파일이 없다면 복구할 수 없습니다.", "warning");
+    showStatus("전체 삭제 완료. 다음 Sample ID는 001입니다. 백업 파일이 없다면 복구할 수 없습니다.", "warning");
   }
 
   function handleExportJson() {
@@ -465,9 +466,10 @@ const ThinFilmApp = (() => {
     try {
       const result = await LabStorage.importJsonFile(file);
       state.records = result.records;
+      resetForm({ keepRenderedRecords: true });
       renderRecords();
       const { added, updated, skipped, invalid } = result.summary;
-      showStatus(`JSON 가져오기 완료: 추가 ${added}개, 업데이트 ${updated}개, 건너뜀 ${skipped}개, 무효 ${invalid}개`, invalid ? "warning" : "success");
+      showStatus(`JSON 가져오기 완료: 추가 ${added}개, 업데이트 ${updated}개, 건너뜀 ${skipped}개, 무효 ${invalid}개. 다음 Sample ID는 ${getNextSampleId()}입니다.`, invalid ? "warning" : "success");
     } catch (error) {
       alert(`가져오기 실패: ${error.message}\n기존 기록은 유지되었습니다.`);
       showStatus("JSON 가져오기 실패. 기존 기록은 유지되었습니다.", "error");
@@ -521,6 +523,10 @@ const ThinFilmApp = (() => {
       <div class="trust-item">
         <span>저장된 기록</span>
         <strong>${state.records.length}개</strong>
+      </div>
+      <div class="trust-item">
+        <span>다음 Sample ID</span>
+        <strong>${escapeHtml(getNextSampleId())}</strong>
       </div>
       <div class="trust-item">
         <span>마지막 기록 수정</span>
