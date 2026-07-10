@@ -15,6 +15,10 @@ const LabSchema = (() => {
       { label: "SRO", value: "SRO" },
       { label: "LMO", value: "LMO" },
     ],
+    growthChamber: [
+      { label: "L chamber", value: "L chamber" },
+      { label: "K chamber", value: "K chamber" },
+    ],
     substrate: [
       { label: "STO(001)", value: "STO(001)" },
       { label: "DSO(110)o", value: "DSO(110)o" },
@@ -63,6 +67,12 @@ const LabSchema = (() => {
       type: "text",
       placeholder: "예: SRO, LMO",
       required: true,
+    },
+    {
+      key: "growthChamber",
+      label: "Growth chamber",
+      type: "text",
+      placeholder: "예: L chamber, K chamber",
     },
     {
       key: "substrate",
@@ -196,6 +206,7 @@ const LabSchema = (() => {
       date: getLocalDateString(),
       sampleId: "001",
       filmName: "",
+      growthChamber: "",
       substrate: "",
       temperatureC: "",
       oxygenPressure: "",
@@ -273,6 +284,7 @@ const LabSchema = (() => {
       }
     });
 
+    if (!isFilled(record.growthChamber)) warnings.push("Growth chamber가 비어 있습니다.");
     if (!isFilled(record.substrate)) warnings.push("증착 기판이 비어 있습니다.");
     if (!isFilled(record.oxygenPressure)) warnings.push("산소 압력이 비어 있습니다.");
 
