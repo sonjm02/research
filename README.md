@@ -9,8 +9,8 @@ research/
 ├─ index.html                  # 기본 진입 페이지
 ├─ app.html                    # index.html 접근이 애매할 때 쓰는 예비 진입 페이지
 ├─ src/
-│  ├─ schema.js                # 실험 기록 데이터 구조와 프리셋
-│  ├─ storage.js               # localStorage 저장, JSON/CSV import/export
+│  ├─ schema.js                # 실험 기록 데이터 구조, 프리셋, 검증 유틸
+│  ├─ storage.js               # localStorage 저장, JSON/CSV import/export, 병합
 │  ├─ app.js                   # 화면 렌더링과 앱 동작
 │  └─ styles.css               # 반응형 UI 스타일
 └─ data/
@@ -61,6 +61,35 @@ research/
 | 레이저 샷 수 | 1500 shots, 3000 shots, 6000 shots |
 
 프리셋을 수정하려면 `src/schema.js`의 `FIELD_PRESETS`만 수정하면 됩니다.
+
+## 기록 신뢰성
+
+이 앱은 서버 없이 동작하는 정적 웹 앱입니다. 기록은 브라우저 `localStorage`에 저장되므로 브라우저 데이터 삭제, 기기 변경, 다른 브라우저 사용 시 기록이 사라질 수 있습니다. 중요한 실험 기록은 반드시 주기적으로 JSON 백업을 남기세요.
+
+### 시간 기록
+
+- `date` 기본값은 브라우저의 로컬 날짜 기준입니다.
+- `updatedAt`은 앱을 열거나 기록을 불러오는 것만으로 바뀌지 않습니다.
+- `updatedAt`은 사용자가 실제로 저장/수정했을 때 갱신됩니다.
+
+### 백업
+
+- JSON/CSV 내보내기 파일명에는 날짜와 시간이 포함됩니다.
+- 예시: `thin-film-records-20260710-1432.json`
+- 앱 화면에서 마지막 기록 수정 시간, 마지막 JSON 백업 시간, 마지막 CSV 백업 시간을 확인할 수 있습니다.
+
+### JSON 가져오기
+
+- JSON 가져오기는 기존 기록과 병합됩니다.
+- 같은 `id`를 가진 기록이 있으면 `updatedAt`이 더 최신인 기록을 유지합니다.
+- 가져오기 결과로 추가/업데이트/건너뜀/무효 기록 수가 표시됩니다.
+- 잘못된 JSON을 가져오면 기존 기록은 유지됩니다.
+
+### 삭제 안전성
+
+- 개별 기록 삭제는 확인창을 거칩니다.
+- 전체 삭제는 `DELETE` 또는 `전체삭제`를 직접 입력해야 실행됩니다.
+- 전체 삭제 전에는 JSON 백업을 먼저 남기는 것을 권장합니다.
 
 ## 사용 방법
 
