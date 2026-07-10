@@ -27,6 +27,7 @@ research/
 
 ### PLD growth 조건
 
+- Growth chamber
 - 증착 기판
 - 온도
 - 산소 압력
@@ -64,7 +65,7 @@ Sample ID는 단순한 숫자형 순번을 사용합니다.
 
 실험 기록 패널에서 검색창, 박막 필터, Sample ID 정렬을 함께 사용할 수 있습니다.
 
-- 검색창: Sample ID, 박막 이름, 기판, XRD/AFM 요약, 태그, 비고를 검색합니다.
+- 검색창: Sample ID, 박막 이름, growth chamber, 기판, XRD/AFM 요약, 태그, 비고를 검색합니다.
 - 박막 필터: 저장된 기록에 있는 박막 이름 기준으로 목록을 좁힙니다.
 - Sample ID 정렬: 숫자형 Sample ID를 큰 번호 먼저 또는 작은 번호 먼저로 정렬합니다.
 - `SRO-20260710-1432` 같은 비숫자형 Sample ID는 정렬 시 숫자형 Sample ID 뒤쪽에 표시됩니다.
@@ -76,6 +77,7 @@ Sample ID는 단순한 숫자형 순번을 사용합니다.
 | 항목 | 프리셋 |
 | --- | --- |
 | 박막 이름 | SRO, LMO |
+| Growth chamber | L chamber, K chamber |
 | 증착 기판 | STO(001), DSO(110)o |
 | 온도 | 650°C, 700°C, 750°C, 800°C |
 | 산소 압력 | 100 mTorr |
