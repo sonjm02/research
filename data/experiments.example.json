@@ -9,20 +9,20 @@
       "createdAt": "2026-07-10T00:00:00.000Z",
       "updatedAt": "2026-07-10T00:00:00.000Z",
       "date": "2026-07-10",
-      "sampleId": "SRO-STO-20260710-01",
+      "sampleId": "001",
       "filmName": "SRO",
       "substrate": "STO(001)",
       "temperatureC": "700",
       "oxygenPressure": "100 mTorr",
-      "lensPosition": "42.5 mm",
+      "lensPosition": "140 mm",
       "laserEnergy": "120",
-      "laserHz": "2",
+      "laserHz": "5",
       "laserShots": "3000",
       "thicknessNm": "20",
       "xrdSummary": "예시: SRO (00l) peak 확인. Laue oscillation 여부와 rocking curve FWHM을 여기에 기록.",
       "xrdFiles": [
         {
-          "name": "SRO_STO_001_XRD_example.ras",
+          "name": "001_SRO_STO_XRD_example.ras",
           "size": 120000,
           "type": "example",
           "lastModified": "2026-07-10T00:00:00.000Z"
@@ -31,7 +31,7 @@
       "afmSummary": "예시: RMS roughness 0.25 nm, step-terrace 관측.",
       "afmFiles": [
         {
-          "name": "SRO_STO_001_AFM_example.spm",
+          "name": "001_SRO_STO_AFM_example.spm",
           "size": 450000,
           "type": "example",
           "lastModified": "2026-07-10T00:00:00.000Z"
