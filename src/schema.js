@@ -6,9 +6,11 @@
 const LabSchema = (() => {
   const STORAGE_VERSION = 1;
 
-  const FILM_PRESETS = ["SRO", "LMO", "BMO", "STO", "Custom"];
-
   const FIELD_PRESETS = {
+    filmName: [
+      { label: "SRO", value: "SRO" },
+      { label: "LMO", value: "LMO" },
+    ],
     substrate: [
       { label: "STO(001)", value: "STO(001)" },
       { label: "DSO(110)o", value: "DSO(110)o" },
@@ -187,7 +189,6 @@ const LabSchema = (() => {
 
   return {
     STORAGE_VERSION,
-    FILM_PRESETS,
     FIELD_PRESETS,
     GROWTH_FIELDS,
     ANALYSIS_FIELDS,
