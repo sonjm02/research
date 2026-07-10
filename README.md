@@ -9,7 +9,7 @@ research/
 ├─ index.html                  # 기본 진입 페이지
 ├─ app.html                    # index.html 접근이 애매할 때 쓰는 예비 진입 페이지
 ├─ src/
-│  ├─ schema.js                # 실험 기록 데이터 구조와 기본 필드
+│  ├─ schema.js                # 실험 기록 데이터 구조와 프리셋
 │  ├─ storage.js               # localStorage 저장, JSON/CSV import/export
 │  ├─ app.js                   # 화면 렌더링과 앱 동작
 │  └─ styles.css               # 반응형 UI 스타일
@@ -45,13 +45,30 @@ research/
 - 태그
 - 추가 메모
 
+## 프리셋
+
+자주 쓰는 PLD 조건은 입력칸 아래 버튼으로 바로 입력할 수 있습니다.
+
+| 항목 | 프리셋 |
+| --- | --- |
+| 증착 기판 | STO(001), DSO(110)o |
+| 온도 | 650°C, 700°C, 750°C, 800°C |
+| 산소 압력 | 100 mTorr |
+| 렌즈 위치 | 140 mm |
+| 레이저 에너지 | 80 mJ, 90 mJ, 100 mJ, 110 mJ, 120 mJ |
+| 레이저 반복률 | 5 Hz, 10 Hz |
+| 레이저 샷 수 | 1500 shots, 3000 shots, 6000 shots |
+
+프리셋을 수정하려면 `src/schema.js`의 `FIELD_PRESETS`만 수정하면 됩니다.
+
 ## 사용 방법
 
 1. GitHub Pages를 켠 뒤 `index.html` 또는 `app.html`을 엽니다.
 2. 왼쪽 폼에 성장 조건과 분석 메모를 입력합니다.
-3. `기록 저장`을 누르면 브라우저 `localStorage`에 저장됩니다.
-4. `JSON 내보내기`를 눌러 백업 파일을 저장합니다.
-5. 다른 브라우저나 PC에서는 `JSON 가져오기`로 기록을 복원합니다.
+3. 자주 쓰는 조건은 각 입력칸 아래 프리셋 버튼을 클릭합니다.
+4. `기록 저장`을 누르면 브라우저 `localStorage`에 저장됩니다.
+5. `JSON 내보내기`를 눌러 백업 파일을 저장합니다.
+6. 다른 브라우저나 PC에서는 `JSON 가져오기`로 기록을 복원합니다.
 
 ## 중요한 제한
 
