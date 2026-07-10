@@ -114,6 +114,7 @@ const LabStorage = (() => {
       "date",
       "sampleId",
       "filmName",
+      "growthChamber",
       "substrate",
       "temperatureC",
       "oxygenPressure",
