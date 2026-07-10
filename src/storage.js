@@ -195,6 +195,7 @@ const LabStorage = (() => {
         return;
       }
 
+      const rawIncomingTime = parseTimestamp(rawRecord.updatedAt || rawRecord.createdAt);
       const incoming = LabSchema.normalizeExperiment(rawRecord, { touchUpdatedAt: false });
       if (!incoming.id) {
         summary.invalid += 1;
@@ -208,8 +209,8 @@ const LabStorage = (() => {
         return;
       }
 
-      const incomingTime = parseTimestamp(incoming.updatedAt);
-      const existingTime = parseTimestamp(existing.updatedAt);
+      const incomingTime = rawIncomingTime || parseTimestamp(incoming.updatedAt);
+      const existingTime = parseTimestamp(existing.updatedAt || existing.createdAt);
       if (incomingTime > existingTime) {
         byId.set(incoming.id, incoming);
         summary.updated += 1;
