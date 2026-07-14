@@ -6,9 +6,11 @@
 const LabSchema = (() => {
   const STORAGE_VERSION = 1;
   const SAMPLE_ID_PAD_WIDTH = 3;
+  const XRD_WAVELENGTH_ANGSTROM = 1.5406;
 
-  const NUMERIC_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots", "thicknessNm"];
-  const NON_NEGATIVE_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots", "thicknessNm"];
+  const NUMERIC_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots"];
+  const NON_NEGATIVE_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots"];
+  const XRD_ANGLE_FIELDS = ["xrdBragg2Theta", "xrdFringe1_2Theta", "xrdFringe2_2Theta"];
 
   const FIELD_PRESETS = {
     filmName: [
@@ -122,20 +124,13 @@ const LabSchema = (() => {
       unit: "shots",
       placeholder: "예: 3000",
     },
-    {
-      key: "thicknessNm",
-      label: "두께",
-      type: "number",
-      unit: "nm",
-      placeholder: "예: 20",
-    },
   ];
 
   const ANALYSIS_FIELDS = [
     {
       key: "xrdSummary",
-      label: "XRD 요약",
-      placeholder: "예: (00l) peak 확인, Laue oscillation 관측, FWHM 등",
+      label: "XRD 분석 결과",
+      placeholder: "Laue oscillation 계산 결과와 peak, FWHM 등의 분석 내용을 기록",
     },
     {
       key: "afmSummary",
@@ -146,6 +141,10 @@ const LabSchema = (() => {
 
   function pad2(value) {
     return String(value).padStart(2, "0");
+  }
+
+  function degreesToRadians(value) {
+    return value * Math.PI / 180;
   }
 
   function getLocalDateString(date = new Date()) {
@@ -196,6 +195,49 @@ const LabSchema = (() => {
     return getNextSampleId(records);
   }
 
+  function calculateLaueThickness(bragg2ThetaDeg, fringe1_2ThetaDeg, fringe2_2ThetaDeg) {
+    const bragg2Theta = Number(bragg2ThetaDeg);
+    const fringe1 = Number(fringe1_2ThetaDeg);
+    const fringe2 = Number(fringe2_2ThetaDeg);
+
+    if (![bragg2Theta, fringe1, fringe2].every(Number.isFinite)) {
+      throw new Error("2θ Bragg와 두 fringe의 2θ 값을 숫자로 입력하세요.");
+    }
+
+    if (![bragg2Theta, fringe1, fringe2].every((value) => value > 0 && value < 180)) {
+      throw new Error("2θ 값은 0°보다 크고 180°보다 작아야 합니다.");
+    }
+
+    const delta2ThetaDeg = Math.abs(fringe2 - fringe1);
+    if (delta2ThetaDeg === 0) {
+      throw new Error("두 fringe의 2θ 값은 서로 달라야 합니다.");
+    }
+
+    const thetaBraggDeg = bragg2Theta / 2;
+    const delta2ThetaRad = degreesToRadians(delta2ThetaDeg);
+    const thetaBraggRad = degreesToRadians(thetaBraggDeg);
+    const cosine = Math.cos(thetaBraggRad);
+
+    if (!Number.isFinite(cosine) || cosine <= 0) {
+      throw new Error("Bragg 각도에서 cos θ 값을 계산할 수 없습니다.");
+    }
+
+    const thicknessAngstrom = XRD_WAVELENGTH_ANGSTROM / (delta2ThetaRad * cosine);
+    const thicknessNm = thicknessAngstrom / 10;
+
+    return {
+      wavelengthAngstrom: XRD_WAVELENGTH_ANGSTROM,
+      bragg2ThetaDeg: bragg2Theta,
+      thetaBraggDeg,
+      fringe1_2ThetaDeg: fringe1,
+      fringe2_2ThetaDeg: fringe2,
+      delta2ThetaDeg,
+      delta2ThetaRad,
+      thicknessAngstrom,
+      thicknessNm,
+    };
+  }
+
   function createEmptyExperiment(overrides = {}) {
     const now = getIsoTimestamp();
     return {
@@ -214,7 +256,10 @@ const LabSchema = (() => {
       laserEnergy: "",
       laserHz: "",
       laserShots: "",
-      thicknessNm: "",
+      xrdBragg2Theta: "",
+      xrdFringe1_2Theta: "",
+      xrdFringe2_2Theta: "",
+      xrdThicknessNm: "",
       xrdSummary: "",
       xrdFiles: [],
       afmSummary: "",
@@ -284,6 +329,20 @@ const LabSchema = (() => {
       }
     });
 
+    const xrdValues = XRD_ANGLE_FIELDS.map((key) => record[key]);
+    const hasAnyXrdAngle = xrdValues.some(isFilled);
+    const hasAllXrdAngles = xrdValues.every(isFilled);
+
+    if (hasAnyXrdAngle && !hasAllXrdAngles) {
+      errors.push("Laue oscillation 계산을 위해 2θ Bragg, 1st fringe, 2nd fringe 값을 모두 입력하세요.");
+    } else if (hasAllXrdAngles) {
+      try {
+        calculateLaueThickness(...xrdValues);
+      } catch (error) {
+        errors.push(error.message);
+      }
+    }
+
     if (!isFilled(record.growthChamber)) warnings.push("Growth chamber가 비어 있습니다.");
     if (!isFilled(record.substrate)) warnings.push("증착 기판이 비어 있습니다.");
     if (!isFilled(record.oxygenPressure)) warnings.push("산소 압력이 비어 있습니다.");
@@ -294,6 +353,7 @@ const LabSchema = (() => {
   return {
     STORAGE_VERSION,
     SAMPLE_ID_PAD_WIDTH,
+    XRD_WAVELENGTH_ANGSTROM,
     FIELD_PRESETS,
     GROWTH_FIELDS,
     ANALYSIS_FIELDS,
@@ -307,6 +367,7 @@ const LabSchema = (() => {
     getNextSampleId,
     makeSampleId,
     makeDuplicateSampleId,
+    calculateLaueThickness,
     createEmptyExperiment,
     normalizeExperiment,
     fileInputToMetadataList,
