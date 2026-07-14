@@ -1,6 +1,8 @@
 /* global LabSchema, LabStorage */
 
 const ThinFilmApp = (() => {
+  const BRAGG_RESULT_START = "[Bragg 법칙 격자상수 계산]";
+  const BRAGG_RESULT_END = "[/Bragg 법칙 격자상수 계산]";
   const LAUE_RESULT_START = "[Laue oscillation 두께 계산]";
   const LAUE_RESULT_END = "[/Laue oscillation 두께 계산]";
 
@@ -56,14 +58,31 @@ const ThinFilmApp = (() => {
     return LabSchema.getNextSampleId(state.records);
   }
 
-  function stripLaueResultBlock(summary) {
+  function stripResultBlock(summary, startMarker, endMarker) {
     const text = String(summary || "");
-    const startIndex = text.indexOf(LAUE_RESULT_START);
+    const startIndex = text.indexOf(startMarker);
     if (startIndex < 0) return text.trim();
 
-    const endIndex = text.indexOf(LAUE_RESULT_END, startIndex);
-    const removeEnd = endIndex < 0 ? text.length : endIndex + LAUE_RESULT_END.length;
+    const endIndex = text.indexOf(endMarker, startIndex);
+    const removeEnd = endIndex < 0 ? text.length : endIndex + endMarker.length;
     return `${text.slice(0, startIndex)}${text.slice(removeEnd)}`.trim();
+  }
+
+  function stripAutoXrdBlocks(summary) {
+    const withoutBragg = stripResultBlock(summary, BRAGG_RESULT_START, BRAGG_RESULT_END);
+    return stripResultBlock(withoutBragg, LAUE_RESULT_START, LAUE_RESULT_END);
+  }
+
+  function buildBraggResultBlock(result) {
+    return [
+      BRAGG_RESULT_START,
+      `가정: Cu Kα, λ = ${formatDecimal(result.wavelengthAngstrom, 4)} Å, n = ${result.braggOrder}, ${result.reflectionLabel} 대칭 반사`,
+      `2θ_Bragg = ${formatDecimal(result.bragg2ThetaDeg, 4)}°`,
+      `θ_Bragg = (2θ_Bragg)/2 = ${formatDecimal(result.thetaBraggDeg, 4)}°`,
+      `d_00l = λ / (2 sin θ_Bragg) = ${formatDecimal(result.dSpacingAngstrom, 5)} Å`,
+      `out-of-plane lattice parameter c = l × d_00l = ${result.reflectionL} × ${formatDecimal(result.dSpacingAngstrom, 5)} Å = ${formatDecimal(result.latticeParameterAngstrom, 5)} Å`,
+      BRAGG_RESULT_END,
+    ].join("\n");
   }
 
   function buildLaueResultBlock(result) {
@@ -80,62 +99,99 @@ const ThinFilmApp = (() => {
     ].join("\n");
   }
 
-  function setLaueResultMessage(message, type = "info") {
-    const resultElement = $("#laueResult");
+  function setXrdResultMessage(message, type = "info") {
+    const resultElement = $("#xrdCalculationResult");
     if (!resultElement) return;
     resultElement.textContent = message;
     resultElement.className = `status-message ${type}`;
   }
 
-  function applyLaueCalculation(options = {}) {
+  function applyXrdCalculations(options = {}) {
     const { announce = false } = options;
     const braggValue = $("#xrdBragg2Theta")?.value.trim() || "";
+    const reflectionL = $("#xrdReflectionL")?.value || "2";
     const fringe1Value = $("#xrdFringe1_2Theta")?.value.trim() || "";
     const fringe2Value = $("#xrdFringe2_2Theta")?.value.trim() || "";
-    const values = [braggValue, fringe1Value, fringe2Value];
-    const hasAny = values.some(Boolean);
-    const hasAll = values.every(Boolean);
+    const dSpacingInput = $("#xrdDSpacingAngstrom");
+    const latticeInput = $("#xrdLatticeParameterAngstrom");
     const thicknessInput = $("#xrdThicknessNm");
     const summaryInput = $("#xrdSummary");
+    const manualSummary = stripAutoXrdBlocks(summaryInput?.value || "");
+    const resultBlocks = [];
+    const messages = [];
+    const errors = [];
+    let hasIncompleteInput = false;
+    let latticeResult = null;
+    let laueResult = null;
 
-    if (!hasAny) {
-      if (thicknessInput) thicknessInput.value = "";
-      if (summaryInput) summaryInput.value = stripLaueResultBlock(summaryInput.value);
-      setLaueResultMessage("세 각도를 입력하면 λ = 1.5406 Å 기준 두께를 자동 계산합니다.", "info");
-      return { status: "empty" };
-    }
-
-    if (!hasAll) {
-      if (thicknessInput) thicknessInput.value = "";
-      if (summaryInput) summaryInput.value = stripLaueResultBlock(summaryInput.value);
-      const message = "2θ Bragg, 1st fringe 2θ, 2nd fringe 2θ 값을 모두 입력하세요.";
-      setLaueResultMessage(message, "warning");
-      if (announce) showStatus(message, "warning");
-      return { status: "incomplete" };
-    }
-
-    try {
-      const result = LabSchema.calculateLaueThickness(braggValue, fringe1Value, fringe2Value);
-      const thicknessNm = formatDecimal(result.thicknessNm, 3);
-      if (thicknessInput) thicknessInput.value = thicknessNm;
-
-      if (summaryInput) {
-        const manualSummary = stripLaueResultBlock(summaryInput.value);
-        const resultBlock = buildLaueResultBlock(result);
-        summaryInput.value = [manualSummary, resultBlock].filter(Boolean).join("\n\n");
+    if (braggValue) {
+      try {
+        latticeResult = LabSchema.calculateOutOfPlaneLatticeParameter(braggValue, reflectionL);
+        if (dSpacingInput) dSpacingInput.value = formatDecimal(latticeResult.dSpacingAngstrom, 5);
+        if (latticeInput) latticeInput.value = formatDecimal(latticeResult.latticeParameterAngstrom, 5);
+        resultBlocks.push(buildBraggResultBlock(latticeResult));
+        messages.push(`c = ${formatDecimal(latticeResult.latticeParameterAngstrom, 5)} Å`);
+      } catch (error) {
+        if (dSpacingInput) dSpacingInput.value = "";
+        if (latticeInput) latticeInput.value = "";
+        errors.push(error.message);
       }
-
-      const message = `계산 두께: ${thicknessNm} nm (${formatDecimal(result.thicknessAngstrom, 2)} Å)`;
-      setLaueResultMessage(message, "success");
-      if (announce) showStatus(`XRD Laue oscillation 두께 계산 완료: ${thicknessNm} nm`, "success");
-      return { status: "success", result };
-    } catch (error) {
-      if (thicknessInput) thicknessInput.value = "";
-      if (summaryInput) summaryInput.value = stripLaueResultBlock(summaryInput.value);
-      setLaueResultMessage(error.message, "error");
-      if (announce) showStatus(error.message, "error");
-      return { status: "error", error };
+    } else {
+      if (dSpacingInput) dSpacingInput.value = "";
+      if (latticeInput) latticeInput.value = "";
     }
+
+    const hasAnyFringe = Boolean(fringe1Value || fringe2Value);
+    const hasBothFringes = Boolean(fringe1Value && fringe2Value);
+
+    if (hasAnyFringe) {
+      if (!braggValue || !hasBothFringes) {
+        if (thicknessInput) thicknessInput.value = "";
+        hasIncompleteInput = true;
+      } else {
+        try {
+          laueResult = LabSchema.calculateLaueThickness(braggValue, fringe1Value, fringe2Value);
+          if (thicknessInput) thicknessInput.value = formatDecimal(laueResult.thicknessNm, 3);
+          resultBlocks.push(buildLaueResultBlock(laueResult));
+          messages.push(`두께 = ${formatDecimal(laueResult.thicknessNm, 3)} nm`);
+        } catch (error) {
+          if (thicknessInput) thicknessInput.value = "";
+          errors.push(error.message);
+        }
+      }
+    } else if (thicknessInput) {
+      thicknessInput.value = "";
+    }
+
+    if (summaryInput) {
+      summaryInput.value = [manualSummary, ...resultBlocks].filter(Boolean).join("\n\n");
+    }
+
+    if (errors.length) {
+      const message = errors.join(" ");
+      setXrdResultMessage(message, "error");
+      if (announce) showStatus(message, "error");
+      return { status: "error", errors };
+    }
+
+    if (hasIncompleteInput) {
+      const message = "Laue oscillation 두께 계산에는 2θ Bragg와 두 fringe 값이 모두 필요합니다.";
+      const combined = messages.length ? `${messages.join(" · ")} · ${message}` : message;
+      setXrdResultMessage(combined, "warning");
+      if (announce) showStatus(combined, "warning");
+      return { status: "incomplete", latticeResult };
+    }
+
+    if (messages.length) {
+      const message = messages.join(" · ");
+      setXrdResultMessage(message, "success");
+      if (announce) showStatus(`XRD 계산 완료: ${message}`, "success");
+      return { status: "success", latticeResult, laueResult };
+    }
+
+    const message = "2θ Bragg를 입력하면 (00l) 격자상수를, 두 fringe까지 입력하면 두께를 계산합니다.";
+    setXrdResultMessage(message, "info");
+    return { status: "empty" };
   }
 
   function renderLayout() {
@@ -200,14 +256,38 @@ const ThinFilmApp = (() => {
               <h3>분석 자료 데이터</h3>
 
               <div class="record-card" style="margin-bottom: 0.9rem;">
-                <h4>Laue oscillation 두께 계산</h4>
-                <p class="section-help">Cu Kα 파장 λ = 1.5406 Å를 사용합니다. Δ(2θ)는 두 fringe 사이의 차이를 라디안으로 변환하고, θBragg는 입력한 2θBragg의 절반을 사용합니다.</p>
+                <h4>XRD 자동 계산</h4>
+                <p class="section-help">Cu Kα 파장 λ = 1.5406 Å, Bragg 차수 n = 1을 사용합니다. 격자상수는 대칭적인 (00l) 반사를 가정해 out-of-plane c = l·d로 계산합니다.</p>
                 <div class="field-grid">
                   <label>
                     <span>2θ Bragg</span>
                     <div class="with-unit">
                       <input type="number" step="any" inputmode="decimal" name="xrdBragg2Theta" id="xrdBragg2Theta" placeholder="예: 45.8631">
                       <small>degree</small>
+                    </div>
+                  </label>
+                  <label>
+                    <span>(00l) 반사</span>
+                    <select name="xrdReflectionL" id="xrdReflectionL">
+                      <option value="1">(001)</option>
+                      <option value="2" selected>(002)</option>
+                      <option value="3">(003)</option>
+                      <option value="4">(004)</option>
+                    </select>
+                    <small>일반적인 perovskite 45° 부근 peak는 보통 (002)입니다.</small>
+                  </label>
+                  <label>
+                    <span>d-spacing</span>
+                    <div class="with-unit">
+                      <input type="text" name="xrdDSpacingAngstrom" id="xrdDSpacingAngstrom" readonly placeholder="자동 계산">
+                      <small>Å</small>
+                    </div>
+                  </label>
+                  <label>
+                    <span>Out-of-plane lattice parameter c</span>
+                    <div class="with-unit">
+                      <input type="text" name="xrdLatticeParameterAngstrom" id="xrdLatticeParameterAngstrom" readonly placeholder="자동 계산">
+                      <small>Å</small>
                     </div>
                   </label>
                   <label>
@@ -225,7 +305,7 @@ const ThinFilmApp = (() => {
                     </div>
                   </label>
                   <label>
-                    <span>계산된 두께</span>
+                    <span>Laue 계산 두께</span>
                     <div class="with-unit">
                       <input type="text" name="xrdThicknessNm" id="xrdThicknessNm" readonly placeholder="자동 계산">
                       <small>nm</small>
@@ -233,15 +313,15 @@ const ThinFilmApp = (() => {
                   </label>
                 </div>
                 <div class="form-actions" style="margin-top: 0.8rem;">
-                  <button type="button" class="secondary" id="calculateLaueBtn">두께 계산</button>
+                  <button type="button" class="secondary" id="calculateXrdBtn">XRD 계산</button>
                 </div>
-                <div id="laueResult" class="status-message info" style="margin-top: 0.8rem; margin-bottom: 0;">세 각도를 입력하면 λ = 1.5406 Å 기준 두께를 자동 계산합니다.</div>
+                <div id="xrdCalculationResult" class="status-message info" style="margin-top: 0.8rem; margin-bottom: 0;">2θ Bragg를 입력하면 (00l) 격자상수를, 두 fringe까지 입력하면 두께를 계산합니다.</div>
               </div>
 
               <div class="analysis-grid">
                 <label>
                   <span>XRD 분석 결과</span>
-                  <textarea name="xrdSummary" id="xrdSummary" rows="10" placeholder="Laue oscillation 계산 결과가 자동으로 추가됩니다. 다른 peak, FWHM, 특이사항도 함께 기록하세요."></textarea>
+                  <textarea name="xrdSummary" id="xrdSummary" rows="14" placeholder="Bragg 법칙과 Laue oscillation 계산 결과가 자동으로 추가됩니다. 다른 peak, FWHM, 특이사항도 함께 기록하세요."></textarea>
                 </label>
                 <label>
                   <span>XRD 파일 메모</span>
@@ -293,7 +373,7 @@ const ThinFilmApp = (() => {
           <div id="trustSummary" class="trust-summary"></div>
 
           <div class="toolbar">
-            <input type="search" id="searchInput" placeholder="예: 001, SRO, L chamber, 26.3 nm, roughness">
+            <input type="search" id="searchInput" placeholder="예: 001, SRO, 3.954 Å, 26.3 nm, roughness">
             <select id="filmFilter" aria-label="박막 필터">
               <option value="all">전체 박막</option>
             </select>
@@ -363,10 +443,11 @@ const ThinFilmApp = (() => {
       $("#sampleId").value = getNextSampleId();
     });
 
-    ["xrdBragg2Theta", "xrdFringe1_2Theta", "xrdFringe2_2Theta"].forEach((id) => {
-      $(`#${id}`).addEventListener("input", () => applyLaueCalculation({ announce: false }));
+    ["xrdBragg2Theta", "xrdReflectionL", "xrdFringe1_2Theta", "xrdFringe2_2Theta"].forEach((id) => {
+      $(`#${id}`).addEventListener("input", () => applyXrdCalculations({ announce: false }));
+      $(`#${id}`).addEventListener("change", () => applyXrdCalculations({ announce: false }));
     });
-    $("#calculateLaueBtn").addEventListener("click", () => applyLaueCalculation({ announce: true }));
+    $("#calculateXrdBtn").addEventListener("click", () => applyXrdCalculations({ announce: true }));
 
     $("#exportJsonBtn").addEventListener("click", handleExportJson);
     $("#exportCsvBtn").addEventListener("click", handleExportCsv);
@@ -420,7 +501,6 @@ const ThinFilmApp = (() => {
     const previous = state.editingId ? state.records.find((record) => record.id === state.editingId) : null;
     const formData = new FormData($("#experimentForm"));
     const base = previous || LabSchema.createEmptyExperiment({ sampleId: getNextSampleId() });
-
     const xrdFileInput = $("#xrdFiles");
     const afmFileInput = $("#afmFiles");
 
@@ -440,6 +520,9 @@ const ThinFilmApp = (() => {
       laserHz: formData.get("laserHz"),
       laserShots: formData.get("laserShots"),
       xrdBragg2Theta: formData.get("xrdBragg2Theta"),
+      xrdReflectionL: formData.get("xrdReflectionL"),
+      xrdDSpacingAngstrom: formData.get("xrdDSpacingAngstrom"),
+      xrdLatticeParameterAngstrom: formData.get("xrdLatticeParameterAngstrom"),
       xrdFringe1_2Theta: formData.get("xrdFringe1_2Theta"),
       xrdFringe2_2Theta: formData.get("xrdFringe2_2Theta"),
       xrdThicknessNm: formData.get("xrdThicknessNm"),
@@ -454,7 +537,7 @@ const ThinFilmApp = (() => {
 
   function handleSubmit(event) {
     event.preventDefault();
-    applyLaueCalculation({ announce: false });
+    applyXrdCalculations({ announce: false });
     const record = collectFormData();
     const validation = LabSchema.validateExperiment(record);
     const duplicate = state.records.find((item) => item.id !== record.id && item.sampleId === record.sampleId);
@@ -487,8 +570,11 @@ const ThinFilmApp = (() => {
     $("#createdAt").value = empty.createdAt;
     $("#date").value = empty.date;
     $("#sampleId").value = empty.sampleId;
+    $("#xrdReflectionL").value = "2";
+    $("#xrdDSpacingAngstrom").value = "";
+    $("#xrdLatticeParameterAngstrom").value = "";
     $("#xrdThicknessNm").value = "";
-    setLaueResultMessage("세 각도를 입력하면 λ = 1.5406 Å 기준 두께를 자동 계산합니다.", "info");
+    setXrdResultMessage("2θ Bragg를 입력하면 (00l) 격자상수를, 두 fringe까지 입력하면 두께를 계산합니다.", "info");
     $("#formTitle").textContent = "새 실험 기록";
     $("#saveBtn").textContent = "기록 저장";
 
@@ -512,6 +598,9 @@ const ThinFilmApp = (() => {
       "laserHz",
       "laserShots",
       "xrdBragg2Theta",
+      "xrdReflectionL",
+      "xrdDSpacingAngstrom",
+      "xrdLatticeParameterAngstrom",
       "xrdFringe1_2Theta",
       "xrdFringe2_2Theta",
       "xrdThicknessNm",
@@ -521,12 +610,12 @@ const ThinFilmApp = (() => {
       "notes",
     ].forEach((key) => {
       const element = document.getElementById(key);
-      if (element) element.value = record[key] || "";
+      if (element) element.value = record[key] || (key === "xrdReflectionL" ? "2" : "");
     });
 
     $("#xrdFiles").value = "";
     $("#afmFiles").value = "";
-    applyLaueCalculation({ announce: false });
+    applyXrdCalculations({ announce: false });
     $("#formTitle").textContent = `기록 수정: ${record.sampleId}`;
     $("#saveBtn").textContent = "수정 저장";
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -540,9 +629,7 @@ const ThinFilmApp = (() => {
     const record = state.records.find((item) => item.id === id);
     if (!record) return;
 
-    if (button.dataset.action === "edit") {
-      populateForm(record);
-    }
+    if (button.dataset.action === "edit") populateForm(record);
 
     if (button.dataset.action === "duplicate") {
       const now = LabSchema.getIsoTimestamp();
@@ -650,20 +737,15 @@ const ThinFilmApp = (() => {
     state.filmFilter = select.value;
   }
 
-  function getSampleSortValue(record) {
-    return LabSchema.parseSequentialSampleId(record.sampleId);
-  }
-
   function compareRecordsBySampleId(a, b) {
-    const aId = getSampleSortValue(a);
-    const bId = getSampleSortValue(b);
+    const aId = LabSchema.parseSequentialSampleId(a.sampleId);
+    const bId = LabSchema.parseSequentialSampleId(b.sampleId);
 
     if (aId === null && bId === null) {
       return Date.parse(b.updatedAt || b.createdAt || 0) - Date.parse(a.updatedAt || a.createdAt || 0);
     }
     if (aId === null) return 1;
     if (bId === null) return -1;
-
     return state.sortMode === "sample-asc" ? aId - bId : bId - aId;
   }
 
@@ -679,6 +761,9 @@ const ThinFilmApp = (() => {
         record.oxygenPressure,
         record.lensPosition,
         record.xrdBragg2Theta,
+        record.xrdReflectionL,
+        record.xrdDSpacingAngstrom,
+        record.xrdLatticeParameterAngstrom,
         record.xrdFringe1_2Theta,
         record.xrdFringe2_2Theta,
         record.xrdThicknessNm,
@@ -686,11 +771,8 @@ const ThinFilmApp = (() => {
         record.afmSummary,
         record.tags,
         record.notes,
-      ]
-        .join(" ")
-        .toLowerCase();
-      const searchOk = !state.searchText || haystack.includes(state.searchText);
-      return filmOk && searchOk;
+      ].join(" ").toLowerCase();
+      return filmOk && (!state.searchText || haystack.includes(state.searchText));
     });
 
     return filtered.sort(compareRecordsBySampleId);
@@ -699,29 +781,13 @@ const ThinFilmApp = (() => {
   function renderTrustSummary() {
     const summary = $("#trustSummary");
     if (!summary) return;
-
     const latestUpdatedAt = getLatestUpdatedAt(state.records);
     summary.innerHTML = `
-      <div class="trust-item">
-        <span>저장된 기록</span>
-        <strong>${state.records.length}개</strong>
-      </div>
-      <div class="trust-item">
-        <span>다음 Sample ID</span>
-        <strong>${escapeHtml(getNextSampleId())}</strong>
-      </div>
-      <div class="trust-item">
-        <span>마지막 기록 수정</span>
-        <strong>${escapeHtml(formatDateTime(latestUpdatedAt))}</strong>
-      </div>
-      <div class="trust-item">
-        <span>마지막 JSON 백업</span>
-        <strong>${escapeHtml(formatDateTime(state.backupMeta.lastJsonExportedAt))}</strong>
-      </div>
-      <div class="trust-item">
-        <span>마지막 CSV 백업</span>
-        <strong>${escapeHtml(formatDateTime(state.backupMeta.lastCsvExportedAt))}</strong>
-      </div>
+      <div class="trust-item"><span>저장된 기록</span><strong>${state.records.length}개</strong></div>
+      <div class="trust-item"><span>다음 Sample ID</span><strong>${escapeHtml(getNextSampleId())}</strong></div>
+      <div class="trust-item"><span>마지막 기록 수정</span><strong>${escapeHtml(formatDateTime(latestUpdatedAt))}</strong></div>
+      <div class="trust-item"><span>마지막 JSON 백업</span><strong>${escapeHtml(formatDateTime(state.backupMeta.lastJsonExportedAt))}</strong></div>
+      <div class="trust-item"><span>마지막 CSV 백업</span><strong>${escapeHtml(formatDateTime(state.backupMeta.lastCsvExportedAt))}</strong></div>
     `;
   }
 
@@ -735,7 +801,7 @@ const ThinFilmApp = (() => {
       $("#recordList").innerHTML = `
         <div class="empty-state">
           <h3>아직 표시할 기록이 없습니다.</h3>
-          <p>왼쪽 폼에 SRO, LMO 등의 growth 조건과 XRD/AFM 분석 메모를 입력해보세요.</p>
+          <p>왼쪽 폼에 growth 조건과 XRD/AFM 분석 메모를 입력해보세요.</p>
         </div>
       `;
       return;
@@ -748,14 +814,15 @@ const ThinFilmApp = (() => {
     if (!files || !files.length) return `<span class="muted">기록 없음</span>`;
     return `
       <ul class="file-list">
-        ${files
-          .map((file) => `<li>${escapeHtml(file.name)} <span>${Math.round((file.size || 0) / 1024)} KB</span></li>`)
-          .join("")}
+        ${files.map((file) => `<li>${escapeHtml(file.name)} <span>${Math.round((file.size || 0) / 1024)} KB</span></li>`).join("")}
       </ul>
     `;
   }
 
   function renderRecordCard(record) {
+    const latticeParameter = record.xrdLatticeParameterAngstrom
+      ? `<p><b>Out-of-plane c:</b> ${escapeHtml(record.xrdLatticeParameterAngstrom)} Å (${escapeHtml(`(00${record.xrdReflectionL || 2})`)})</p>`
+      : "";
     const xrdThickness = record.xrdThicknessNm
       ? `<p><b>Laue 계산 두께:</b> ${escapeHtml(record.xrdThicknessNm)} nm</p>`
       : "";
@@ -790,6 +857,7 @@ const ThinFilmApp = (() => {
           <div class="details-grid">
             <div>
               <h4>XRD</h4>
+              ${latticeParameter}
               ${xrdThickness}
               <p style="white-space: pre-wrap;">${escapeHtml(record.xrdSummary || "기록 없음")}</p>
               ${renderFileList(record.xrdFiles)}
