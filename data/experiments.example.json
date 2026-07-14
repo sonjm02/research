@@ -20,10 +20,13 @@
       "laserHz": "5",
       "laserShots": "3000",
       "xrdBragg2Theta": "45.8631",
+      "xrdReflectionL": "2",
+      "xrdDSpacingAngstrom": "1.97700",
+      "xrdLatticeParameterAngstrom": "3.95400",
       "xrdFringe1_2Theta": "44.9704",
       "xrdFringe2_2Theta": "45.3340",
       "xrdThicknessNm": "26.360",
-      "xrdSummary": "예시: SRO (00l) peak 확인.\n\n[Laue oscillation 두께 계산]\nλ = 1.5406 Å\n2θ_Bragg = 45.8631°\nθ_Bragg = (2θ_Bragg)/2 = 22.9316°\n1st fringe 2θ = 44.9704°\n2nd fringe 2θ = 45.334°\nΔ(2θ) = |2nd - 1st| = 0.3636° = 0.00634602 rad\nt ≈ λ / [Δ(2θ) cos θ_Bragg] = 263.6 Å = 26.36 nm\n[/Laue oscillation 두께 계산]",
+      "xrdSummary": "예시: SRO (00l) peak 확인.\n\n[Bragg 법칙 격자상수 계산]\n가정: Cu Kα, λ = 1.5406 Å, n = 1, (002) 대칭 반사\n2θ_Bragg = 45.8631°\nθ_Bragg = (2θ_Bragg)/2 = 22.9316°\nd_00l = λ / (2 sin θ_Bragg) = 1.977 Å\nout-of-plane lattice parameter c = l × d_00l = 2 × 1.977 Å = 3.954 Å\n[/Bragg 법칙 격자상수 계산]\n\n[Laue oscillation 두께 계산]\nλ = 1.5406 Å\n2θ_Bragg = 45.8631°\nθ_Bragg = (2θ_Bragg)/2 = 22.9316°\n1st fringe 2θ = 44.9704°\n2nd fringe 2θ = 45.334°\nΔ(2θ) = |2nd - 1st| = 0.3636° = 0.00634602 rad\nt ≈ λ / [Δ(2θ) cos θ_Bragg] = 263.6 Å = 26.36 nm\n[/Laue oscillation 두께 계산]",
       "xrdFiles": [
         {
           "name": "001_SRO_STO_XRD_example.ras",
