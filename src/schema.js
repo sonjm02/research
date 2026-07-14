@@ -10,7 +10,6 @@ const LabSchema = (() => {
 
   const NUMERIC_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots"];
   const NON_NEGATIVE_FIELDS = ["temperatureC", "laserEnergy", "laserHz", "laserShots"];
-  const XRD_ANGLE_FIELDS = ["xrdBragg2Theta", "xrdFringe1_2Theta", "xrdFringe2_2Theta"];
 
   const FIELD_PRESETS = {
     filmName: [
@@ -130,7 +129,7 @@ const LabSchema = (() => {
     {
       key: "xrdSummary",
       label: "XRD 분석 결과",
-      placeholder: "Laue oscillation 계산 결과와 peak, FWHM 등의 분석 내용을 기록",
+      placeholder: "Bragg 법칙과 Laue oscillation 계산 결과, peak, FWHM 등의 분석 내용을 기록",
     },
     {
       key: "afmSummary",
@@ -195,17 +194,62 @@ const LabSchema = (() => {
     return getNextSampleId(records);
   }
 
+  function parseBragg2Theta(value) {
+    const bragg2Theta = Number(value);
+    if (!Number.isFinite(bragg2Theta)) {
+      throw new Error("2θ Bragg 값을 숫자로 입력하세요.");
+    }
+    if (bragg2Theta <= 0 || bragg2Theta >= 180) {
+      throw new Error("2θ Bragg 값은 0°보다 크고 180°보다 작아야 합니다.");
+    }
+    return bragg2Theta;
+  }
+
+  function parseReflectionL(value) {
+    const reflectionL = Number(value);
+    if (!Number.isInteger(reflectionL) || reflectionL <= 0) {
+      throw new Error("(00l) 반사의 l 값은 1 이상의 정수여야 합니다.");
+    }
+    return reflectionL;
+  }
+
+  function calculateOutOfPlaneLatticeParameter(bragg2ThetaDeg, reflectionL = 2) {
+    const bragg2Theta = parseBragg2Theta(bragg2ThetaDeg);
+    const l = parseReflectionL(reflectionL);
+    const thetaBraggDeg = bragg2Theta / 2;
+    const thetaBraggRad = degreesToRadians(thetaBraggDeg);
+    const sine = Math.sin(thetaBraggRad);
+
+    if (!Number.isFinite(sine) || sine <= 0) {
+      throw new Error("Bragg 각도에서 sin θ 값을 계산할 수 없습니다.");
+    }
+
+    const dSpacingAngstrom = XRD_WAVELENGTH_ANGSTROM / (2 * sine);
+    const latticeParameterAngstrom = l * dSpacingAngstrom;
+
+    return {
+      wavelengthAngstrom: XRD_WAVELENGTH_ANGSTROM,
+      braggOrder: 1,
+      bragg2ThetaDeg: bragg2Theta,
+      thetaBraggDeg,
+      reflectionL: l,
+      reflectionLabel: `(00${l})`,
+      dSpacingAngstrom,
+      latticeParameterAngstrom,
+    };
+  }
+
   function calculateLaueThickness(bragg2ThetaDeg, fringe1_2ThetaDeg, fringe2_2ThetaDeg) {
-    const bragg2Theta = Number(bragg2ThetaDeg);
+    const bragg2Theta = parseBragg2Theta(bragg2ThetaDeg);
     const fringe1 = Number(fringe1_2ThetaDeg);
     const fringe2 = Number(fringe2_2ThetaDeg);
 
-    if (![bragg2Theta, fringe1, fringe2].every(Number.isFinite)) {
-      throw new Error("2θ Bragg와 두 fringe의 2θ 값을 숫자로 입력하세요.");
+    if (![fringe1, fringe2].every(Number.isFinite)) {
+      throw new Error("두 fringe의 2θ 값을 숫자로 입력하세요.");
     }
 
-    if (![bragg2Theta, fringe1, fringe2].every((value) => value > 0 && value < 180)) {
-      throw new Error("2θ 값은 0°보다 크고 180°보다 작아야 합니다.");
+    if (![fringe1, fringe2].every((value) => value > 0 && value < 180)) {
+      throw new Error("fringe의 2θ 값은 0°보다 크고 180°보다 작아야 합니다.");
     }
 
     const delta2ThetaDeg = Math.abs(fringe2 - fringe1);
@@ -257,6 +301,9 @@ const LabSchema = (() => {
       laserHz: "",
       laserShots: "",
       xrdBragg2Theta: "",
+      xrdReflectionL: "2",
+      xrdDSpacingAngstrom: "",
+      xrdLatticeParameterAngstrom: "",
       xrdFringe1_2Theta: "",
       xrdFringe2_2Theta: "",
       xrdThicknessNm: "",
@@ -281,6 +328,7 @@ const LabSchema = (() => {
     merged.date = merged.date || getLocalDateString();
     merged.createdAt = merged.createdAt || merged.updatedAt || now;
     merged.updatedAt = touchUpdatedAt ? now : (merged.updatedAt || merged.createdAt || now);
+    merged.xrdReflectionL = merged.xrdReflectionL || "2";
     merged.xrdFiles = Array.isArray(merged.xrdFiles) ? merged.xrdFiles : [];
     merged.afmFiles = Array.isArray(merged.afmFiles) ? merged.afmFiles : [];
 
@@ -329,17 +377,27 @@ const LabSchema = (() => {
       }
     });
 
-    const xrdValues = XRD_ANGLE_FIELDS.map((key) => record[key]);
-    const hasAnyXrdAngle = xrdValues.some(isFilled);
-    const hasAllXrdAngles = xrdValues.every(isFilled);
+    const hasBragg = isFilled(record.xrdBragg2Theta);
+    const hasFringe1 = isFilled(record.xrdFringe1_2Theta);
+    const hasFringe2 = isFilled(record.xrdFringe2_2Theta);
 
-    if (hasAnyXrdAngle && !hasAllXrdAngles) {
-      errors.push("Laue oscillation 계산을 위해 2θ Bragg, 1st fringe, 2nd fringe 값을 모두 입력하세요.");
-    } else if (hasAllXrdAngles) {
+    if (hasBragg) {
       try {
-        calculateLaueThickness(...xrdValues);
+        calculateOutOfPlaneLatticeParameter(record.xrdBragg2Theta, record.xrdReflectionL || 2);
       } catch (error) {
         errors.push(error.message);
+      }
+    }
+
+    if (hasFringe1 || hasFringe2) {
+      if (!hasBragg || !hasFringe1 || !hasFringe2) {
+        errors.push("Laue oscillation 두께 계산을 위해 2θ Bragg와 두 fringe 값을 모두 입력하세요.");
+      } else {
+        try {
+          calculateLaueThickness(record.xrdBragg2Theta, record.xrdFringe1_2Theta, record.xrdFringe2_2Theta);
+        } catch (error) {
+          errors.push(error.message);
+        }
       }
     }
 
@@ -367,6 +425,7 @@ const LabSchema = (() => {
     getNextSampleId,
     makeSampleId,
     makeDuplicateSampleId,
+    calculateOutOfPlaneLatticeParameter,
     calculateLaueThickness,
     createEmptyExperiment,
     normalizeExperiment,
