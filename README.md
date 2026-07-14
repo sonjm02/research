@@ -12,7 +12,9 @@ research/
 │  ├─ schema.js                # 데이터 구조, 검증, XRD 계산 유틸
 │  ├─ storage.js               # localStorage, JSON/CSV import/export
 │  ├─ app.js                   # 화면과 앱 동작
-│  └─ styles.css               # 반응형 UI 스타일
+│  ├─ spot-settings.js         # spot calibration 설정과 fluence 자동 계산
+│  ├─ styles.css               # 기본 반응형 UI 스타일
+│  └─ spot-settings.css        # spot 설정 화면 스타일
 └─ data/
    └─ experiments.example.json # 가져오기 테스트용 예시 데이터
 ```
@@ -33,10 +35,58 @@ research/
 - 산소 압력
 - 렌즈 위치
 - 레이저 에너지
+- Spot area
+- 자동 계산된 laser fluence
 - 레이저 반복률
 - 레이저 샷 수
 
 기존의 수동 두께 입력란은 제거했습니다. 두께는 XRD Laue oscillation 계산 결과로 기록합니다.
+
+## Spot calibration과 laser fluence
+
+Spot 면적은 `mm²`, 레이저 에너지는 `mJ`, fluence는 `J/cm²` 단위를 사용합니다.
+
+```text
+F[J/cm²] = E[mJ] × 0.1 / A[mm²]
+```
+
+예를 들어 레이저 에너지가 `80 mJ`, spot area가 `9.907 mm²`이면 다음과 같습니다.
+
+```text
+F ≈ 80 × 0.1 / 9.907
+  ≈ 0.8075 J/cm²
+```
+
+### Spot 설정 시스템
+
+상단의 `Spot 설정` 버튼에서 미리 측정한 값을 저장합니다.
+
+각 설정은 다음 세 항목으로 구성됩니다.
+
+- Chamber: 예시 `L chamber`, `K chamber`
+- 렌즈 위치: 예시 `140 mm`
+- 측정된 spot area: 예시 `9.907 mm²`
+
+실험 조건에서 chamber와 렌즈 위치가 저장된 설정과 일치하면 spot area를 자동으로 불러옵니다. 이후 레이저 에너지가 입력되면 fluence도 자동 계산됩니다.
+
+- 저장된 설정을 불러온 spot area는 초록색 계열로 표시됩니다.
+- spot area를 직접 수정하면 수동 입력 상태로 전환됩니다.
+- 일치하는 설정이 없으면 spot area를 직접 입력할 수 있습니다.
+- 기록 카드의 조건란에도 spot area와 fluence가 표시됩니다.
+- 설정은 수정·삭제할 수 있습니다.
+- 설정 전용 JSON 내보내기와 가져오기를 지원합니다.
+
+측정값은 장비와 광학 정렬 상태에 따라 달라질 수 있으므로 임의의 기본 면적은 제공하지 않습니다. 실제로 측정한 값만 설정에 입력하세요.
+
+### 저장되는 필드
+
+- `spotAreaMm2`
+- `laserFluenceJcm2`
+- `spotAreaSource`: `calibration` 또는 `manual`
+- `spotCalibrationId`
+- `spotCalibrationLabel`
+
+실험 기록 JSON과 CSV에 위 값들이 포함됩니다. Spot calibration 목록 자체는 별도의 설정 JSON으로 백업합니다.
 
 ### 분석 자료
 
@@ -163,23 +213,25 @@ Sample ID는 단순한 숫자형 순번을 사용합니다.
 
 ## 기록과 백업
 
-이 앱은 서버 없이 동작하며 기록은 브라우저 `localStorage`에 저장됩니다. 브라우저 데이터 삭제, 기기 변경, 다른 브라우저 사용 시 기록이 사라질 수 있으므로 중요한 기록은 JSON으로 주기적으로 백업하세요.
+이 앱은 서버 없이 동작하며 기록과 spot 설정은 브라우저 `localStorage`에 저장됩니다. 브라우저 데이터 삭제, 기기 변경, 다른 브라우저 사용 시 사라질 수 있으므로 실험 기록 JSON과 spot 설정 JSON을 모두 주기적으로 백업하세요.
 
 - `updatedAt`은 실제 저장이나 수정 시에만 갱신됩니다.
 - JSON/CSV 내보내기 파일명에는 날짜와 시간이 포함됩니다.
-- XRD 입력값, fringe 상태, d-spacing, 격자상수, 계산된 두께가 JSON/CSV에 포함됩니다.
+- Spot area, fluence, XRD 입력값, fringe 상태, d-spacing, 격자상수, 계산된 두께가 JSON/CSV에 포함됩니다.
 - JSON 가져오기는 기존 기록과 병합되며 같은 `id`에서는 더 최신인 기록을 유지합니다.
 - 전체 삭제는 `DELETE` 또는 `전체삭제`를 직접 입력해야 실행됩니다.
 
 ## 사용 방법
 
 1. `index.html` 또는 `app.html`을 엽니다.
-2. 성장 조건과 분석 정보를 입력합니다.
-3. `2θ Bragg`와 실제 `(00l)` 반사를 선택해 격자상수를 확인합니다.
-4. 각 fringe가 보이면 `2θ 값 입력`, 보이지 않으면 `none`을 선택합니다.
-5. 두 fringe 값이 모두 있으면 Laue oscillation 두께가 계산됩니다.
-6. 자동 계산 결과가 XRD 분석 결과에 추가됐는지 확인합니다.
-7. 기록을 저장하고 JSON 백업을 남깁니다.
+2. 상단 `Spot 설정`에서 chamber·렌즈 위치별 측정 면적을 저장합니다.
+3. 성장 조건에서 chamber와 렌즈 위치를 선택해 spot area가 자동 적용되는지 확인합니다.
+4. 레이저 에너지를 입력해 fluence를 확인합니다.
+5. `2θ Bragg`와 실제 `(00l)` 반사를 선택해 격자상수를 확인합니다.
+6. 각 fringe가 보이면 `2θ 값 입력`, 보이지 않으면 `none`을 선택합니다.
+7. 두 fringe 값이 모두 있으면 Laue oscillation 두께가 계산됩니다.
+8. 자동 계산 결과를 확인하고 기록을 저장합니다.
+9. 실험 기록 JSON과 spot 설정 JSON을 백업합니다.
 
 ## 중요한 제한
 
