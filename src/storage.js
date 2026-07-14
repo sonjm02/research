@@ -32,11 +32,8 @@ const LabStorage = (() => {
     const normalized = LabSchema.normalizeExperiment(record, { touchUpdatedAt });
     const index = records.findIndex((item) => item.id === normalized.id);
 
-    if (index >= 0) {
-      records[index] = normalized;
-    } else {
-      records.unshift(normalized);
-    }
+    if (index >= 0) records[index] = normalized;
+    else records.unshift(normalized);
 
     saveRecords(records);
     return normalized;
@@ -123,6 +120,9 @@ const LabStorage = (() => {
       "laserHz",
       "laserShots",
       "xrdBragg2Theta",
+      "xrdReflectionL",
+      "xrdDSpacingAngstrom",
+      "xrdLatticeParameterAngstrom",
       "xrdFringe1_2Theta",
       "xrdFringe2_2Theta",
       "xrdThicknessNm",
@@ -176,22 +176,15 @@ const LabStorage = (() => {
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
       throw new Error("JSON 최상위 구조는 records 배열을 포함한 객체여야 합니다.");
     }
-
     if (!Array.isArray(parsed.records)) {
       throw new Error("JSON 안에 records 배열이 없습니다.");
     }
-
     return parsed.records;
   }
 
   function mergeImportedRecords(existingRecords, incomingRecords) {
     const byId = new Map(existingRecords.map((record) => [record.id, record]));
-    const summary = {
-      added: 0,
-      updated: 0,
-      skipped: 0,
-      invalid: 0,
-    };
+    const summary = { added: 0, updated: 0, skipped: 0, invalid: 0 };
 
     incomingRecords.forEach((rawRecord) => {
       if (!rawRecord || typeof rawRecord !== "object" || Array.isArray(rawRecord)) {
