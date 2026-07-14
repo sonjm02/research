@@ -1,6 +1,9 @@
 /* global LabSchema, LabStorage */
 
 const ThinFilmApp = (() => {
+  const LAUE_RESULT_START = "[Laue oscillation 두께 계산]";
+  const LAUE_RESULT_END = "[/Laue oscillation 두께 계산]";
+
   const state = {
     records: [],
     backupMeta: {},
@@ -35,6 +38,12 @@ const ThinFilmApp = (() => {
     });
   }
 
+  function formatDecimal(value, digits = 4) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "";
+    return number.toFixed(digits).replace(/\.?0+$/, "");
+  }
+
   function getLatestUpdatedAt(records) {
     const timestamps = records
       .map((record) => Date.parse(record.updatedAt))
@@ -45,6 +54,88 @@ const ThinFilmApp = (() => {
 
   function getNextSampleId() {
     return LabSchema.getNextSampleId(state.records);
+  }
+
+  function stripLaueResultBlock(summary) {
+    const text = String(summary || "");
+    const startIndex = text.indexOf(LAUE_RESULT_START);
+    if (startIndex < 0) return text.trim();
+
+    const endIndex = text.indexOf(LAUE_RESULT_END, startIndex);
+    const removeEnd = endIndex < 0 ? text.length : endIndex + LAUE_RESULT_END.length;
+    return `${text.slice(0, startIndex)}${text.slice(removeEnd)}`.trim();
+  }
+
+  function buildLaueResultBlock(result) {
+    return [
+      LAUE_RESULT_START,
+      `λ = ${formatDecimal(result.wavelengthAngstrom, 4)} Å`,
+      `2θ_Bragg = ${formatDecimal(result.bragg2ThetaDeg, 4)}°`,
+      `θ_Bragg = (2θ_Bragg)/2 = ${formatDecimal(result.thetaBraggDeg, 4)}°`,
+      `1st fringe 2θ = ${formatDecimal(result.fringe1_2ThetaDeg, 4)}°`,
+      `2nd fringe 2θ = ${formatDecimal(result.fringe2_2ThetaDeg, 4)}°`,
+      `Δ(2θ) = |2nd - 1st| = ${formatDecimal(result.delta2ThetaDeg, 6)}° = ${formatDecimal(result.delta2ThetaRad, 8)} rad`,
+      `t ≈ λ / [Δ(2θ) cos θ_Bragg] = ${formatDecimal(result.thicknessAngstrom, 2)} Å = ${formatDecimal(result.thicknessNm, 3)} nm`,
+      LAUE_RESULT_END,
+    ].join("\n");
+  }
+
+  function setLaueResultMessage(message, type = "info") {
+    const resultElement = $("#laueResult");
+    if (!resultElement) return;
+    resultElement.textContent = message;
+    resultElement.className = `status-message ${type}`;
+  }
+
+  function applyLaueCalculation(options = {}) {
+    const { announce = false } = options;
+    const braggValue = $("#xrdBragg2Theta")?.value.trim() || "";
+    const fringe1Value = $("#xrdFringe1_2Theta")?.value.trim() || "";
+    const fringe2Value = $("#xrdFringe2_2Theta")?.value.trim() || "";
+    const values = [braggValue, fringe1Value, fringe2Value];
+    const hasAny = values.some(Boolean);
+    const hasAll = values.every(Boolean);
+    const thicknessInput = $("#xrdThicknessNm");
+    const summaryInput = $("#xrdSummary");
+
+    if (!hasAny) {
+      if (thicknessInput) thicknessInput.value = "";
+      if (summaryInput) summaryInput.value = stripLaueResultBlock(summaryInput.value);
+      setLaueResultMessage("세 각도를 입력하면 λ = 1.5406 Å 기준 두께를 자동 계산합니다.", "info");
+      return { status: "empty" };
+    }
+
+    if (!hasAll) {
+      if (thicknessInput) thicknessInput.value = "";
+      if (summaryInput) summaryInput.value = stripLaueResultBlock(summaryInput.value);
+      const message = "2θ Bragg, 1st fringe 2θ, 2nd fringe 2θ 값을 모두 입력하세요.";
+      setLaueResultMessage(message, "warning");
+      if (announce) showStatus(message, "warning");
+      return { status: "incomplete" };
+    }
+
+    try {
+      const result = LabSchema.calculateLaueThickness(braggValue, fringe1Value, fringe2Value);
+      const thicknessNm = formatDecimal(result.thicknessNm, 3);
+      if (thicknessInput) thicknessInput.value = thicknessNm;
+
+      if (summaryInput) {
+        const manualSummary = stripLaueResultBlock(summaryInput.value);
+        const resultBlock = buildLaueResultBlock(result);
+        summaryInput.value = [manualSummary, resultBlock].filter(Boolean).join("\n\n");
+      }
+
+      const message = `계산 두께: ${thicknessNm} nm (${formatDecimal(result.thicknessAngstrom, 2)} Å)`;
+      setLaueResultMessage(message, "success");
+      if (announce) showStatus(`XRD Laue oscillation 두께 계산 완료: ${thicknessNm} nm`, "success");
+      return { status: "success", result };
+    } catch (error) {
+      if (thicknessInput) thicknessInput.value = "";
+      if (summaryInput) summaryInput.value = stripLaueResultBlock(summaryInput.value);
+      setLaueResultMessage(error.message, "error");
+      if (announce) showStatus(error.message, "error");
+      return { status: "error", error };
+    }
   }
 
   function renderLayout() {
@@ -107,10 +198,50 @@ const ThinFilmApp = (() => {
 
             <div class="section-block">
               <h3>분석 자료 데이터</h3>
+
+              <div class="record-card" style="margin-bottom: 0.9rem;">
+                <h4>Laue oscillation 두께 계산</h4>
+                <p class="section-help">Cu Kα 파장 λ = 1.5406 Å를 사용합니다. Δ(2θ)는 두 fringe 사이의 차이를 라디안으로 변환하고, θBragg는 입력한 2θBragg의 절반을 사용합니다.</p>
+                <div class="field-grid">
+                  <label>
+                    <span>2θ Bragg</span>
+                    <div class="with-unit">
+                      <input type="number" step="any" inputmode="decimal" name="xrdBragg2Theta" id="xrdBragg2Theta" placeholder="예: 45.8631">
+                      <small>degree</small>
+                    </div>
+                  </label>
+                  <label>
+                    <span>1st fringe 2θ</span>
+                    <div class="with-unit">
+                      <input type="number" step="any" inputmode="decimal" name="xrdFringe1_2Theta" id="xrdFringe1_2Theta" placeholder="예: 44.9704">
+                      <small>degree</small>
+                    </div>
+                  </label>
+                  <label>
+                    <span>2nd fringe 2θ</span>
+                    <div class="with-unit">
+                      <input type="number" step="any" inputmode="decimal" name="xrdFringe2_2Theta" id="xrdFringe2_2Theta" placeholder="예: 45.3340">
+                      <small>degree</small>
+                    </div>
+                  </label>
+                  <label>
+                    <span>계산된 두께</span>
+                    <div class="with-unit">
+                      <input type="text" name="xrdThicknessNm" id="xrdThicknessNm" readonly placeholder="자동 계산">
+                      <small>nm</small>
+                    </div>
+                  </label>
+                </div>
+                <div class="form-actions" style="margin-top: 0.8rem;">
+                  <button type="button" class="secondary" id="calculateLaueBtn">두께 계산</button>
+                </div>
+                <div id="laueResult" class="status-message info" style="margin-top: 0.8rem; margin-bottom: 0;">세 각도를 입력하면 λ = 1.5406 Å 기준 두께를 자동 계산합니다.</div>
+              </div>
+
               <div class="analysis-grid">
                 <label>
-                  <span>XRD 요약</span>
-                  <textarea name="xrdSummary" id="xrdSummary" rows="4" placeholder="예: (00l) peak 확인, Laue oscillation 관측, FWHM 등"></textarea>
+                  <span>XRD 분석 결과</span>
+                  <textarea name="xrdSummary" id="xrdSummary" rows="10" placeholder="Laue oscillation 계산 결과가 자동으로 추가됩니다. 다른 peak, FWHM, 특이사항도 함께 기록하세요."></textarea>
                 </label>
                 <label>
                   <span>XRD 파일 메모</span>
@@ -162,7 +293,7 @@ const ThinFilmApp = (() => {
           <div id="trustSummary" class="trust-summary"></div>
 
           <div class="toolbar">
-            <input type="search" id="searchInput" placeholder="예: 001, SRO, L chamber, STO, roughness">
+            <input type="search" id="searchInput" placeholder="예: 001, SRO, L chamber, 26.3 nm, roughness">
             <select id="filmFilter" aria-label="박막 필터">
               <option value="all">전체 박막</option>
             </select>
@@ -231,6 +362,11 @@ const ThinFilmApp = (() => {
     $("#generateIdBtn").addEventListener("click", () => {
       $("#sampleId").value = getNextSampleId();
     });
+
+    ["xrdBragg2Theta", "xrdFringe1_2Theta", "xrdFringe2_2Theta"].forEach((id) => {
+      $(`#${id}`).addEventListener("input", () => applyLaueCalculation({ announce: false }));
+    });
+    $("#calculateLaueBtn").addEventListener("click", () => applyLaueCalculation({ announce: true }));
 
     $("#exportJsonBtn").addEventListener("click", handleExportJson);
     $("#exportCsvBtn").addEventListener("click", handleExportCsv);
@@ -303,7 +439,10 @@ const ThinFilmApp = (() => {
       laserEnergy: formData.get("laserEnergy"),
       laserHz: formData.get("laserHz"),
       laserShots: formData.get("laserShots"),
-      thicknessNm: formData.get("thicknessNm"),
+      xrdBragg2Theta: formData.get("xrdBragg2Theta"),
+      xrdFringe1_2Theta: formData.get("xrdFringe1_2Theta"),
+      xrdFringe2_2Theta: formData.get("xrdFringe2_2Theta"),
+      xrdThicknessNm: formData.get("xrdThicknessNm"),
       xrdSummary: formData.get("xrdSummary"),
       xrdFiles: xrdFileInput.files.length ? LabSchema.fileInputToMetadataList(xrdFileInput.files) : (previous?.xrdFiles || []),
       afmSummary: formData.get("afmSummary"),
@@ -315,6 +454,7 @@ const ThinFilmApp = (() => {
 
   function handleSubmit(event) {
     event.preventDefault();
+    applyLaueCalculation({ announce: false });
     const record = collectFormData();
     const validation = LabSchema.validateExperiment(record);
     const duplicate = state.records.find((item) => item.id !== record.id && item.sampleId === record.sampleId);
@@ -347,6 +487,8 @@ const ThinFilmApp = (() => {
     $("#createdAt").value = empty.createdAt;
     $("#date").value = empty.date;
     $("#sampleId").value = empty.sampleId;
+    $("#xrdThicknessNm").value = "";
+    setLaueResultMessage("세 각도를 입력하면 λ = 1.5406 Å 기준 두께를 자동 계산합니다.", "info");
     $("#formTitle").textContent = "새 실험 기록";
     $("#saveBtn").textContent = "기록 저장";
 
@@ -369,7 +511,10 @@ const ThinFilmApp = (() => {
       "laserEnergy",
       "laserHz",
       "laserShots",
-      "thicknessNm",
+      "xrdBragg2Theta",
+      "xrdFringe1_2Theta",
+      "xrdFringe2_2Theta",
+      "xrdThicknessNm",
       "xrdSummary",
       "afmSummary",
       "tags",
@@ -381,6 +526,7 @@ const ThinFilmApp = (() => {
 
     $("#xrdFiles").value = "";
     $("#afmFiles").value = "";
+    applyLaueCalculation({ announce: false });
     $("#formTitle").textContent = `기록 수정: ${record.sampleId}`;
     $("#saveBtn").textContent = "수정 저장";
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -532,6 +678,10 @@ const ThinFilmApp = (() => {
         record.temperatureC,
         record.oxygenPressure,
         record.lensPosition,
+        record.xrdBragg2Theta,
+        record.xrdFringe1_2Theta,
+        record.xrdFringe2_2Theta,
+        record.xrdThicknessNm,
         record.xrdSummary,
         record.afmSummary,
         record.tags,
@@ -606,6 +756,10 @@ const ThinFilmApp = (() => {
   }
 
   function renderRecordCard(record) {
+    const xrdThickness = record.xrdThicknessNm
+      ? `<p><b>Laue 계산 두께:</b> ${escapeHtml(record.xrdThicknessNm)} nm</p>`
+      : "";
+
     return `
       <article class="record-card">
         <div class="record-card-header">
@@ -629,7 +783,6 @@ const ThinFilmApp = (() => {
           ${renderCondition("에너지", record.laserEnergy, "mJ")}
           ${renderCondition("Hz", record.laserHz, "Hz")}
           ${renderCondition("Shots", record.laserShots, "")}
-          ${renderCondition("두께", record.thicknessNm, "nm")}
         </div>
 
         <details>
@@ -637,19 +790,20 @@ const ThinFilmApp = (() => {
           <div class="details-grid">
             <div>
               <h4>XRD</h4>
-              <p>${escapeHtml(record.xrdSummary || "기록 없음")}</p>
+              ${xrdThickness}
+              <p style="white-space: pre-wrap;">${escapeHtml(record.xrdSummary || "기록 없음")}</p>
               ${renderFileList(record.xrdFiles)}
             </div>
             <div>
               <h4>AFM</h4>
-              <p>${escapeHtml(record.afmSummary || "기록 없음")}</p>
+              <p style="white-space: pre-wrap;">${escapeHtml(record.afmSummary || "기록 없음")}</p>
               ${renderFileList(record.afmFiles)}
             </div>
           </div>
           <div class="memo-block">
             <h4>태그 / 비고</h4>
             <p><b>태그:</b> ${escapeHtml(record.tags || "-")}</p>
-            <p>${escapeHtml(record.notes || "")}</p>
+            <p style="white-space: pre-wrap;">${escapeHtml(record.notes || "")}</p>
             <p class="muted">마지막 수정: ${escapeHtml(formatDateTime(record.updatedAt))}</p>
           </div>
         </details>
