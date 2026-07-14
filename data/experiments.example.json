@@ -23,6 +23,8 @@
       "xrdReflectionL": "2",
       "xrdDSpacingAngstrom": "1.97700",
       "xrdLatticeParameterAngstrom": "3.95400",
+      "xrdFringe1Status": "value",
+      "xrdFringe2Status": "value",
       "xrdFringe1_2Theta": "44.9704",
       "xrdFringe2_2Theta": "45.3340",
       "xrdThicknessNm": "26.360",
