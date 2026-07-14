@@ -9,7 +9,7 @@ research/
 ├─ index.html                  # 기본 진입 페이지
 ├─ app.html                    # index.html 접근이 애매할 때 쓰는 예비 진입 페이지
 ├─ src/
-│  ├─ schema.js                # 실험 기록 데이터 구조, 프리셋, 검증 유틸
+│  ├─ schema.js                # 실험 기록 데이터 구조, 프리셋, 검증, XRD 계산 유틸
 │  ├─ storage.js               # localStorage 저장, JSON/CSV import/export, 병합
 │  ├─ app.js                   # 화면 렌더링과 앱 동작
 │  └─ styles.css               # 반응형 UI 스타일
@@ -35,16 +35,55 @@ research/
 - 레이저 에너지
 - 레이저 반복률 Hz
 - 레이저 샷 수
-- 두께
+
+기존의 수동 두께 입력란은 제거했습니다. 두께는 XRD Laue oscillation 계산 결과로 기록합니다.
 
 ### 분석 자료 데이터
 
-- XRD 요약
+- XRD 2θ Bragg
+- XRD 1st fringe 2θ
+- XRD 2nd fringe 2θ
+- Laue oscillation 계산 두께
+- XRD 분석 결과
 - XRD 파일명/크기 메타데이터
 - AFM 요약
 - AFM 파일명/크기 메타데이터
 - 태그
 - 추가 메모
+
+## XRD Laue oscillation 두께 계산
+
+세 각도를 입력하면 Cu Kα 파장 `λ = 1.5406 Å`를 기준으로 두께를 계산합니다.
+
+```text
+t ≈ λ / [Δ(2θ) cos θBragg]
+```
+
+계산 과정은 다음과 같습니다.
+
+1. `Δ(2θ) = |2nd fringe 2θ - 1st fringe 2θ|`
+2. degree 단위의 `Δ(2θ)`를 radian으로 변환
+3. `θBragg = (입력한 2θBragg) / 2`
+4. 계산 결과는 Å와 nm로 표시
+5. 계산 블록은 `XRD 분석 결과`에 자동으로 추가되며 다시 계산하면 기존 계산 블록만 갱신
+
+두 fringe 값은 서로 인접한 fringe의 2θ 값을 사용하는 것을 전제로 합니다.
+
+예시 입력:
+
+```text
+2θBragg = 45.8631°
+1st fringe 2θ = 44.9704°
+2nd fringe 2θ = 45.3340°
+```
+
+예시 결과:
+
+```text
+Δ(2θ) = 0.3636° = 0.00634602 rad
+θBragg = 22.9316°
+t ≈ 263.60 Å = 26.36 nm
+```
 
 ## Sample ID 규칙
 
@@ -65,7 +104,7 @@ Sample ID는 단순한 숫자형 순번을 사용합니다.
 
 실험 기록 패널에서 검색창, 박막 필터, Sample ID 정렬을 함께 사용할 수 있습니다.
 
-- 검색창: Sample ID, 박막 이름, growth chamber, 기판, XRD/AFM 요약, 태그, 비고를 검색합니다.
+- 검색창: Sample ID, 박막 이름, growth chamber, 기판, XRD 각도, 계산 두께, XRD/AFM 요약, 태그, 비고를 검색합니다.
 - 박막 필터: 저장된 기록에 있는 박막 이름 기준으로 목록을 좁힙니다.
 - Sample ID 정렬: 숫자형 Sample ID를 큰 번호 먼저 또는 작은 번호 먼저로 정렬합니다.
 - `SRO-20260710-1432` 같은 비숫자형 Sample ID는 정렬 시 숫자형 Sample ID 뒤쪽에 표시됩니다.
@@ -102,6 +141,7 @@ Sample ID는 단순한 숫자형 순번을 사용합니다.
 
 - JSON/CSV 내보내기 파일명에는 날짜와 시간이 포함됩니다.
 - 예시: `thin-film-records-20260710-1432.json`
+- XRD 각도 입력값과 계산된 두께도 JSON/CSV에 포함됩니다.
 - 앱 화면에서 다음 Sample ID, 마지막 기록 수정 시간, 마지막 JSON 백업 시간, 마지막 CSV 백업 시간을 확인할 수 있습니다.
 
 ### JSON 가져오기
@@ -122,11 +162,12 @@ Sample ID는 단순한 숫자형 순번을 사용합니다.
 1. GitHub Pages를 켠 뒤 `index.html` 또는 `app.html`을 엽니다.
 2. 왼쪽 폼에 성장 조건과 분석 메모를 입력합니다.
 3. Sample ID는 자동 입력된 `001`, `002`, `003` 형식의 값을 사용합니다.
-4. 자주 쓰는 조건은 각 입력칸 아래 프리셋 버튼을 클릭합니다.
-5. `기록 저장`을 누르면 브라우저 `localStorage`에 저장됩니다.
-6. 오른쪽 기록 패널에서 검색창, 박막 필터, Sample ID 정렬을 사용해 기록을 찾습니다.
-7. `JSON 내보내기`를 눌러 백업 파일을 저장합니다.
-8. 다른 브라우저나 PC에서는 `JSON 가져오기`로 기록을 복원합니다.
+4. XRD의 2θBragg와 두 fringe 2θ 값을 입력하면 두께가 자동 계산됩니다.
+5. 계산 결과가 XRD 분석 결과에 추가됐는지 확인합니다.
+6. `기록 저장`을 누르면 브라우저 `localStorage`에 저장됩니다.
+7. 오른쪽 기록 패널에서 검색창, 박막 필터, Sample ID 정렬을 사용해 기록을 찾습니다.
+8. `JSON 내보내기`를 눌러 백업 파일을 저장합니다.
+9. 다른 브라우저나 PC에서는 `JSON 가져오기`로 기록을 복원합니다.
 
 ## 중요한 제한
 
