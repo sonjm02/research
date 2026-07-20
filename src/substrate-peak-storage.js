@@ -84,7 +84,8 @@
     LabStorage.exportCsv = (records) => {
       const headers = [
         "date", "sampleId", "filmName", "growthChamber", "substrate", "temperatureC", "oxygenPressure",
-        "lensPosition", "laserEnergy", "spotAreaMm2", "laserFluenceJcm2", "laserHz", "laserShots",
+        "lensPosition", "laserEnergy", "spotAreaMm2", "laserFluenceJcm2", "spotAreaSource", "spotCalibrationId",
+        "spotCalibrationLabel", "laserHz", "laserShots",
         "substratePeakCalibrationId", "substratePeakCalibrationLabel", "substratePeakReference2Theta",
         "substratePeakMeasured2Theta", "substratePeakOffset2Theta", "xrdAppliedShift2Theta",
         "xrdBragg2Theta", "xrdCorrectedBragg2Theta", "xrdReflectionL", "xrdDSpacingAngstrom",
